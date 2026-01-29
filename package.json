@@ -2,8 +2,8 @@
   "name": "@clawdbot/wecom",
   "version": "2026.1.25",
   "type": "module",
+  "license": "MIT",
   "description": "Clawdbot WeCom (WeChat Work) intelligent bot channel plugin",
-  "author": "YanHaidao (VX: YanHaidao)",
   "clawdbot": {
     "extensions": [
       "./index.ts"
