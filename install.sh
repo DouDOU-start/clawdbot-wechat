@@ -282,14 +282,25 @@ SCRIPT
     chmod +x "$BIN_DIR/$BIN_NAME"
     print_success "已安装命令: $BIN_DIR/$BIN_NAME"
 
-    # 检查 PATH
+    # 自动添加到 PATH
     if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-        print_warning "$BIN_DIR 不在 PATH 中"
-        echo ""
-        echo "请将以下内容添加到 ~/.bashrc 或 ~/.zshrc："
-        echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-        echo ""
-        echo "然后运行: source ~/.bashrc"
+        local shell_rc=""
+        if [ -n "$ZSH_VERSION" ] || [ -f "$HOME/.zshrc" ]; then
+            shell_rc="$HOME/.zshrc"
+        else
+            shell_rc="$HOME/.bashrc"
+        fi
+
+        # 检查是否已经添加过
+        if ! grep -q 'export PATH="\$HOME/.local/bin:\$PATH"' "$shell_rc" 2>/dev/null; then
+            echo '' >> "$shell_rc"
+            echo '# Clawdbot WeCom 插件' >> "$shell_rc"
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$shell_rc"
+            print_success "已添加 PATH 配置到 $shell_rc"
+        fi
+
+        # 立即生效（当前 shell）
+        export PATH="$HOME/.local/bin:$PATH"
     fi
 }
 
