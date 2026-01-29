@@ -4,13 +4,23 @@
 
 ## 安装
 
+### 1. 克隆项目
+
+```bash
+git clone https://github.com/DouDOU-start/clawdbot-wechat.git
+cd clawdbot-wechat
+npm install
+```
+
+### 2. 安装插件到 Clawdbot
+
 ```bash
 clawdbot plugins install --link /path/to/clawdbot-wechat
 clawdbot plugins enable wecom
 clawdbot gateway restart
 ```
 
-> 💡 **提示**：将 `/path/to/clawdbot-wechat` 替换为本项目的实际路径。
+> 💡 **提示**：将 `/path/to/clawdbot-wechat` 替换为你克隆项目的实际路径。
 
 ## 配置
 
