@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
@@ -10,7 +10,7 @@ import { computeWecomMsgSignature, decryptWecomEncrypted, encryptWecomPlaintext 
 import { handleWecomWebhookRequest, registerWecomWebhookTarget } from "./monitor.js";
 
 async function withServer(
-  handler: Parameters<typeof createServer>[0],
+  handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>,
   fn: (baseUrl: string) => Promise<void>,
 ) {
   const server = createServer(handler);
@@ -39,6 +39,7 @@ describe("handleWecomWebhookRequest", () => {
       token,
       encodingAESKey,
       receiveId: "",
+      outboundConfigured: false,
       config: { webhookPath: "/hook", token, encodingAESKey },
     };
 
@@ -86,6 +87,7 @@ describe("handleWecomWebhookRequest", () => {
       token,
       encodingAESKey,
       receiveId: "",
+      outboundConfigured: false,
       config: { webhookPath: "/hook", token, encodingAESKey },
     };
 
