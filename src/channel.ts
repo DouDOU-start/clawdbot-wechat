@@ -2,6 +2,7 @@ import type {
   ChannelAccountSnapshot,
   ChannelPlugin,
   ClawdbotConfig,
+  PluginRuntime,
 } from "clawdbot/plugin-sdk";
 import {
   DEFAULT_ACCOUNT_ID,
@@ -291,7 +292,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
         runtime: ctx.runtime,
         // The HTTP handler resolves the active PluginRuntime via getWecomRuntime().
         // The stored target only needs to be decrypt/verify-capable.
-        core: ({} as unknown) as any,
+        core: {} as PluginRuntime,
         path,
         statusSink: (patch) => ctx.setStatus({ accountId: ctx.accountId, ...patch }),
       });

@@ -3,7 +3,18 @@ import crypto from "node:crypto";
 
 import type { ClawdbotConfig, PluginRuntime } from "clawdbot/plugin-sdk";
 
-import type { ResolvedWecomAccount, WecomInboundMessage } from "./types.js";
+import type {
+  ResolvedWecomAccount,
+  WecomInboundMessage,
+  WecomInboundText,
+  WecomInboundVoice,
+  WecomInboundMixed,
+  WecomInboundMixedItem,
+  WecomInboundImage,
+  WecomInboundFile,
+  WecomInboundEvent,
+  WecomInboundStreamRefresh,
+} from "./types.js";
 import { decryptWecomEncrypted, encryptWecomPlaintext, verifyWecomSignature, computeWecomMsgSignature } from "./crypto.js";
 import { getWecomRuntime } from "./runtime.js";
 
@@ -468,18 +479,18 @@ async function startAgentForStream(params: {
 function buildInboundBody(msg: WecomInboundMessage): string {
   const msgtype = String(msg.msgtype ?? "").toLowerCase();
   if (msgtype === "text") {
-    const content = (msg as any).text?.content;
+    const content = (msg as WecomInboundText).text?.content;
     return typeof content === "string" ? content : "";
   }
   if (msgtype === "voice") {
-    const content = (msg as any).voice?.content;
+    const content = (msg as WecomInboundVoice).voice?.content;
     return typeof content === "string" ? content : "[voice]";
   }
   if (msgtype === "mixed") {
-    const items = (msg as any).mixed?.msg_item;
+    const items = (msg as WecomInboundMixed).mixed?.msg_item;
     if (Array.isArray(items)) {
       return items
-        .map((item: any) => {
+        .map((item: WecomInboundMixedItem) => {
           const t = String(item?.msgtype ?? "").toLowerCase();
           if (t === "text") return String(item?.text?.content ?? "");
           if (t === "image") return `[image] ${String(item?.image?.url ?? "").trim()}`.trim();
@@ -491,19 +502,19 @@ function buildInboundBody(msg: WecomInboundMessage): string {
     return "[mixed]";
   }
   if (msgtype === "image") {
-    const url = String((msg as any).image?.url ?? "").trim();
+    const url = String((msg as WecomInboundImage).image?.url ?? "").trim();
     return url ? `[image] ${url}` : "[image]";
   }
   if (msgtype === "file") {
-    const url = String((msg as any).file?.url ?? "").trim();
+    const url = String((msg as WecomInboundFile).file?.url ?? "").trim();
     return url ? `[file] ${url}` : "[file]";
   }
   if (msgtype === "event") {
-    const eventtype = String((msg as any).event?.eventtype ?? "").trim();
+    const eventtype = String((msg as WecomInboundEvent).event?.eventtype ?? "").trim();
     return eventtype ? `[event] ${eventtype}` : "[event]";
   }
   if (msgtype === "stream") {
-    const id = String((msg as any).stream?.id ?? "").trim();
+    const id = String((msg as WecomInboundStreamRefresh).stream?.id ?? "").trim();
     return id ? `[stream_refresh] ${id}` : "[stream_refresh]";
   }
   return msgtype ? `[${msgtype}]` : "";
@@ -671,7 +682,7 @@ export async function handleWecomWebhookRequest(
 
   // Stream refresh callback: reply with current state (if any).
   if (msgtype === "stream") {
-    const streamId = String((msg as any).stream?.id ?? "").trim();
+    const streamId = String((msg as WecomInboundStreamRefresh).stream?.id ?? "").trim();
     const state = streamId ? streams.get(streamId) : undefined;
     if (state) logVerbose(target, `stream refresh streamId=${streamId} started=${state.started} finished=${state.finished}`);
     const reply = state ? buildStreamReplyFromState(state) : buildStreamReplyFromState({
@@ -707,7 +718,7 @@ export async function handleWecomWebhookRequest(
 
   // enter_chat welcome event: optionally reply with text (allowed by spec).
   if (msgtype === "event") {
-    const eventtype = String((msg as any).event?.eventtype ?? "").toLowerCase();
+    const eventtype = String((msg as WecomInboundEvent).event?.eventtype ?? "").toLowerCase();
     if (eventtype === "enter_chat") {
       const welcome = target.account.config.welcomeText?.trim();
       const reply = welcome

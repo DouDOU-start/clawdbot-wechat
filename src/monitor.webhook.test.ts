@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
 
-import type { ClawdbotConfig } from "clawdbot/plugin-sdk";
+import type { ClawdbotConfig, PluginRuntime } from "clawdbot/plugin-sdk";
 
 import type { ResolvedWecomAccount } from "./types.js";
 import { computeWecomMsgSignature, decryptWecomEncrypted, encryptWecomPlaintext } from "./crypto.js";
@@ -47,7 +47,7 @@ describe("handleWecomWebhookRequest", () => {
       account,
       config: {} as ClawdbotConfig,
       runtime: {},
-      core: {} as any,
+      core: {} as PluginRuntime,
       path: "/hook",
     });
 
@@ -95,7 +95,7 @@ describe("handleWecomWebhookRequest", () => {
       account,
       config: {} as ClawdbotConfig,
       runtime: {},
-      core: {} as any,
+      core: {} as PluginRuntime,
       path: "/hook",
     });
 
@@ -130,7 +130,12 @@ describe("handleWecomWebhookRequest", () => {
           },
         );
         expect(response.status).toBe(200);
-        const json = JSON.parse(await response.text()) as any;
+        const json = JSON.parse(await response.text()) as {
+          encrypt: string;
+          msgsignature: string;
+          timestamp: string;
+          nonce: string;
+        };
         expect(typeof json.encrypt).toBe("string");
         expect(typeof json.msgsignature).toBe("string");
         expect(typeof json.timestamp).toBe("string");
@@ -141,7 +146,10 @@ describe("handleWecomWebhookRequest", () => {
           receiveId: "",
           encrypt: json.encrypt,
         });
-        const reply = JSON.parse(replyPlain) as any;
+        const reply = JSON.parse(replyPlain) as {
+          msgtype: string;
+          stream?: { content: string; finish: boolean; id: string };
+        };
         expect(reply.msgtype).toBe("stream");
         expect(reply.stream?.content).toBe("1");
         expect(reply.stream?.finish).toBe(false);

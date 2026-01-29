@@ -78,10 +78,34 @@ export type WecomInboundEvent = WecomInboundBase & {
   };
 };
 
+export type WecomInboundImage = WecomInboundBase & {
+  msgtype: "image";
+  image?: { url?: string };
+};
+
+export type WecomInboundFile = WecomInboundBase & {
+  msgtype: "file";
+  file?: { url?: string };
+};
+
+export type WecomInboundMixedItem = {
+  msgtype?: string;
+  text?: { content?: string };
+  image?: { url?: string };
+};
+
+export type WecomInboundMixed = WecomInboundBase & {
+  msgtype: "mixed";
+  mixed?: { msg_item?: WecomInboundMixedItem[] };
+};
+
 export type WecomInboundMessage =
   | WecomInboundText
   | WecomInboundVoice
   | WecomInboundStreamRefresh
   | WecomInboundEvent
+  | WecomInboundImage
+  | WecomInboundFile
+  | WecomInboundMixed
   | (WecomInboundBase & Record<string, unknown>);
 
