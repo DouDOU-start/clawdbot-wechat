@@ -17,6 +17,7 @@ import type {
 } from "./types.js";
 import { decryptWecomEncrypted, encryptWecomPlaintext, verifyWecomSignature, computeWecomMsgSignature } from "./crypto.js";
 import { getWecomRuntime } from "./runtime.js";
+import { downloadImageFromUrl } from "./wecom-api.js";
 
 export type WecomRuntimeEnv = {
   log?: (message: string) => void;
@@ -370,7 +371,9 @@ async function startAgentForStream(params: {
   const userid = msg.from?.userid?.trim() || "unknown";
   const chatType = msg.chattype === "group" ? "group" : "direct";
   const chatId = msg.chattype === "group" ? (msg.chatid?.trim() || "unknown") : userid;
-  const rawBody = buildInboundBody(msg);
+
+  // 使用异步函数处理图片下载
+  const rawBody = await buildInboundBodyWithImages(msg, target.runtime.log);
 
   const route = core.channel.routing.resolveAgentRoute({
     cfg: config,
@@ -518,6 +521,97 @@ function buildInboundBody(msg: WecomInboundMessage): string {
     return id ? `[stream_refresh] ${id}` : "[stream_refresh]";
   }
   return msgtype ? `[${msgtype}]` : "";
+}
+
+/**
+ * 从图片 URL 下载图片并转换为 data URL
+ */
+async function downloadAndConvertToDataUrl(
+  imageUrl: string,
+  log?: (message: string) => void,
+): Promise<string | null> {
+  try {
+    const result = await downloadImageFromUrl(imageUrl);
+    if (!result) {
+      log?.(`[wecom] 无法下载图片: ${imageUrl}`);
+      return null;
+    }
+
+    // 根据 contentType 确定图片格式
+    let mimeType = result.contentType;
+    if (!mimeType.startsWith("image/")) {
+      mimeType = "image/png"; // 默认使用 PNG
+    }
+
+    // 构建 data URL
+    const dataUrl = `data:${mimeType};base64,${result.base64}`;
+    log?.(`[wecom] 图片下载成功: ${imageUrl.slice(0, 50)}... -> data URL (${result.buffer.length} bytes)`);
+    return dataUrl;
+  } catch (err) {
+    log?.(`[wecom] 图片下载失败: ${imageUrl} - ${String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * 异步构建入站消息体，处理图片下载
+ */
+async function buildInboundBodyWithImages(
+  msg: WecomInboundMessage,
+  log?: (message: string) => void,
+): Promise<string> {
+  const msgtype = String(msg.msgtype ?? "").toLowerCase();
+
+  // 处理图片消息
+  if (msgtype === "image") {
+    const url = String((msg as WecomInboundImage).image?.url ?? "").trim();
+    if (url) {
+      log?.(`[wecom] 收到图片消息，尝试下载: ${url.slice(0, 80)}...`);
+      const dataUrl = await downloadAndConvertToDataUrl(url, log);
+      if (dataUrl) {
+        // 返回 data URL，AI 可以识别
+        return `[用户发送了一张图片]\n${dataUrl}`;
+      }
+      // 下载失败，返回原始 URL
+      return `[用户发送了一张图片，但下载失败]\n原始链接: ${url}`;
+    }
+    return "[image]";
+  }
+
+  // 处理混合消息（图文混合）
+  if (msgtype === "mixed") {
+    const items = (msg as WecomInboundMixed).mixed?.msg_item;
+    if (Array.isArray(items)) {
+      const parts: string[] = [];
+      for (const item of items) {
+        const t = String(item?.msgtype ?? "").toLowerCase();
+        if (t === "text") {
+          const content = String(item?.text?.content ?? "").trim();
+          if (content) parts.push(content);
+        } else if (t === "image") {
+          const url = String(item?.image?.url ?? "").trim();
+          if (url) {
+            log?.(`[wecom] 混合消息中收到图片，尝试下载: ${url.slice(0, 80)}...`);
+            const dataUrl = await downloadAndConvertToDataUrl(url, log);
+            if (dataUrl) {
+              parts.push(`[图片]\n${dataUrl}`);
+            } else {
+              parts.push(`[图片下载失败]\n原始链接: ${url}`);
+            }
+          } else {
+            parts.push("[image]");
+          }
+        } else {
+          parts.push(`[${t || "item"}]`);
+        }
+      }
+      return parts.filter(Boolean).join("\n\n");
+    }
+    return "[mixed]";
+  }
+
+  // 其他消息类型使用同步函数
+  return buildInboundBody(msg);
 }
 
 export function registerWecomWebhookTarget(target: WecomWebhookTarget): () => void {
