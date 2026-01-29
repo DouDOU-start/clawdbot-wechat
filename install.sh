@@ -317,7 +317,19 @@ main() {
     if [ -d "$INSTALL_DIR" ]; then
         print_info "检测到已安装，正在更新..."
         cd "$INSTALL_DIR"
+
+        # 记录更新前的版本
+        local old_version=$(git rev-parse HEAD 2>/dev/null || echo "")
         git pull
+        local new_version=$(git rev-parse HEAD 2>/dev/null || echo "")
+
+        # 如果脚本有更新，重新执行本地脚本
+        if [ "$old_version" != "$new_version" ] && [ -z "$CLAWDBOT_WECOM_REEXEC" ]; then
+            print_info "检测到脚本更新，重新加载..."
+            export CLAWDBOT_WECOM_REEXEC=1
+            exec bash "$INSTALL_DIR/install.sh" "$@"
+        fi
+
         print_success "代码更新完成"
     else
         print_info "正在安装到 $INSTALL_DIR ..."
