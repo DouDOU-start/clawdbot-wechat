@@ -69,7 +69,12 @@ clawdbot gateway restart
       token: "填入上一步生成的 Token",
       encodingAESKey: "填入上一步生成的 EncodingAESKey",
       receiveId: "",
-      dm: { policy: "pairing" }
+      dm: { policy: "pairing" },
+      // 以下为可选的出站 API 配置（用于主动发送消息）
+      corpId: "企业ID",
+      agentId: 1000002,
+      secret: "应用Secret",
+      name: "机器人名称"
     }
   }
 }
@@ -120,9 +125,25 @@ clawdbot gateway --port 18789 --verbose
 | `encodingAESKey` | string | 是 | 企业微信后台生成的 EncodingAESKey |
 | `receiveId` | string | 否 | 接收消息的企业 ID，通常留空 |
 | `welcomeText` | string | 否 | 用户首次进入聊天时的欢迎语 |
+| `name` | string | 否 | 账户显示名称 |
+| `corpId` | string | 否 | 企业 ID，用于主动发送消息（出站 API） |
+| `agentId` | number | 否 | 应用 AgentId，用于主动发送消息 |
+| `secret` | string | 否 | 应用 Secret，用于主动发送消息 |
 | `dm` | object | 否 | 私聊策略配置 |
 | `dm.policy` | string | 否 | 私聊策略：`pairing`（配对）、`allowlist`（允许列表）、`open`（开放）、`disabled`（禁用） |
 | `dm.allowFrom` | array | 否 | 当策略为 `allowlist` 时，允许的用户 ID 列表 |
+
+### 出站 API 配置（可选）
+
+如果需要使用主动发送消息功能，需要配置以下参数：
+
+| 参数 | 获取方式 |
+|------|----------|
+| `corpId` | 企业微信管理后台 →「我的企业」→「企业信息」→「企业ID」 |
+| `agentId` | 企业微信管理后台 →「应用管理」→ 选择机器人应用 →「AgentId」 |
+| `secret` | 企业微信管理后台 →「应用管理」→ 选择机器人应用 →「Secret」 |
+
+> 💡 **提示**：出站 API 用于主动向用户发送消息，如果只需要被动回复功能，可以不配置这些参数。
 
 ### 多账户配置
 
