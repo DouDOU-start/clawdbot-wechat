@@ -49,28 +49,42 @@ check_command() {
     fi
 }
 
-# 读取用户输入（带默认值）
+# 读取用户输入（带默认值，支持管道模式）
 read_input() {
     local prompt="$1"
     local default="$2"
     local result
 
     if [ -n "$default" ]; then
-        read -p "$prompt [$default]: " result
+        printf "%s [%s]: " "$prompt" "$default" >&2
+        read result < /dev/tty
         echo "${result:-$default}"
     else
-        read -p "$prompt: " result
+        printf "%s: " "$prompt" >&2
+        read result < /dev/tty
         echo "$result"
     fi
 }
 
-# 读取密码输入（不显示）
+# 读取密码输入（不显示，支持管道模式）
 read_secret() {
     local prompt="$1"
     local result
 
-    read -s -p "$prompt: " result
-    echo ""
+    printf "%s: " "$prompt" >&2
+    read -s result < /dev/tty
+    echo "" >&2
+    echo "$result"
+}
+
+# 读取确认输入（支持管道模式）
+read_confirm() {
+    local prompt="$1"
+    local default="$2"
+    local result
+
+    printf "%s [%s]: " "$prompt" "$default" >&2
+    read result < /dev/tty
     echo "$result"
 }
 
@@ -104,7 +118,7 @@ run_config_wizard() {
 
     # 出站 API 配置
     echo ""
-    read -p "是否配置出站 API（用于主动发送消息）？[y/N]: " config_outbound
+    local config_outbound=$(read_confirm "是否配置出站 API（用于主动发送消息）？[y/N]" "N")
     local corp_id=""
     local agent_id=""
     local secret=""
@@ -141,7 +155,7 @@ generate_config() {
     # 检查配置文件是否存在
     if [ -f "$CONFIG_FILE" ]; then
         print_warning "检测到已有配置文件: $CONFIG_FILE"
-        read -p "是否备份并覆盖 wecom 配置？[Y/n]: " overwrite
+        local overwrite=$(read_confirm "是否备份并覆盖 wecom 配置？[Y/n]" "Y")
         if [[ "$overwrite" =~ ^[Nn]$ ]]; then
             print_info "跳过配置，请手动编辑配置文件"
             return 0
@@ -238,7 +252,9 @@ case "${1:-help}" in
         ;;
     config)
         echo -e "${BLUE}→ 重新运行配置向导...${NC}"
-        curl -sSL https://raw.githubusercontent.com/DouDOU-start/clawdbot-wechat/master/install.sh | bash -s -- --config-only
+        curl -sSL https://raw.githubusercontent.com/DouDOU-start/clawdbot-wechat/master/install.sh -o /tmp/clawdbot-wecom-install.sh
+        bash /tmp/clawdbot-wecom-install.sh --config-only
+        rm -f /tmp/clawdbot-wecom-install.sh
         ;;
     status)
         echo "安装目录: $INSTALL_DIR"
@@ -314,7 +330,7 @@ main() {
 
         # 询问是否进行配置
         echo ""
-        read -p "是否进行企业微信配置？[Y/n]: " do_config
+        local do_config=$(read_confirm "是否进行企业微信配置？[Y/n]" "Y")
         if [[ ! "$do_config" =~ ^[Nn]$ ]]; then
             run_config_wizard
         fi
