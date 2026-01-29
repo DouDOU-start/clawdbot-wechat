@@ -1,55 +1,6 @@
-# WeCom (WeChat Work) Channel Plugin for Clawdbot
-
-Maintainer: YanHaidao (VX: YanHaidao)
-
-Status: WeCom intelligent bot (API mode) via encrypted webhooks + passive replies (stream).
-
-## Install
-
-### Option A: Install from npm
-```bash
-clawdbot plugins install @clawdbot/wecom
-clawdbot plugins enable wecom
-clawdbot gateway restart
-```
-
-### Option B: Local development (link)
-```bash
-clawdbot plugins install --link extensions/wecom
-clawdbot plugins enable wecom
-clawdbot gateway restart
-```
-
-## Configure
-
-```json5
-{
-  channels: {
-    wecom: {
-      enabled: true,
-      webhookPath: "/wecom",
-      token: "YOUR_TOKEN",
-      encodingAESKey: "YOUR_ENCODING_AES_KEY",
-      receiveId: "",
-      dm: { policy: "pairing" }
-    }
-  }
-}
-```
-
-## Notes
-
-- Webhooks require public HTTPS. For security, only expose the `/wecom` path to the internet.
-- Stream behavior: the first reply may be a minimal placeholder; WeCom will call back with `msgtype=stream` to refresh and fetch the full content.
-- Limitations: passive replies only; standalone send is not supported.
-
----
-
 # Clawdbot 企业微信（WeCom）Channel 插件
 
-维护者：YanHaidao（VX：YanHaidao）
-
-状态：支持企业微信智能机器人（API 模式）加密回调 + 被动回复（stream）。
+支持企业微信智能机器人（API 模式）加密回调 + 被动回复（stream），以及图片发送。
 
 ## 安装
 
@@ -201,6 +152,21 @@ clawdbot gateway --port 18789 --verbose
 
 ---
 
+## 图片发送
+
+插件支持在回复中发送图片。当 AI 回复的文本中包含图片 URL（以 `.png`、`.jpg`、`.jpeg`、`.gif`、`.webp` 结尾）时，插件会自动下载图片并转换为 base64 格式发送给企业微信。
+
+支持的格式：
+- Markdown 图片语法：`![描述](https://example.com/image.png)`
+- 纯 URL：`https://example.com/image.png`
+
+限制：
+- 单次回复最多 10 张图片
+- 单张图片最大 10MB
+- 仅支持 JPG/PNG 格式（企业微信限制）
+
+---
+
 ## 常见问题
 
 ### Q: 验证回调地址失败怎么办？
@@ -228,6 +194,14 @@ A: 这是正常的 Stream 模式行为。企业微信会自动刷新获取完整
 A: 企业微信要求中国内地服务器必须完成 ICP 备案。你可以：
 1. 完成 ICP 备案后继续使用
 2. 使用中国香港或海外服务器（无需备案）
+
+### Q: 图片没有显示？
+
+A: 请确认：
+1. AI 回复中包含完整的图片 URL（以图片扩展名结尾）
+2. 图片 URL 可以公网访问
+3. 图片大小不超过 10MB
+4. 查看日志中是否有 `[wecom] found X image URLs` 的输出
 
 ---
 
