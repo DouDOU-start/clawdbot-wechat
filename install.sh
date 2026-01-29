@@ -218,11 +218,16 @@ EOF
     print_success "配置已写入: $CONFIG_FILE"
 }
 
-# 安装本地命令到 ~/.local/bin
+# 安装本地命令
 install_local_command() {
-    mkdir -p "$BIN_DIR"
+    # 优先安装到 /usr/local/bin（如果有权限），否则安装到 ~/.local/bin
+    local target_dir="/usr/local/bin"
+    if [ ! -w "$target_dir" ]; then
+        target_dir="$BIN_DIR"
+        mkdir -p "$target_dir"
+    fi
 
-    cat > "$BIN_DIR/$BIN_NAME" << 'SCRIPT'
+    cat > "$target_dir/$BIN_NAME" << 'SCRIPT'
 #!/bin/bash
 # Clawdbot WeCom 插件管理命令
 
@@ -279,11 +284,11 @@ case "${1:-help}" in
 esac
 SCRIPT
 
-    chmod +x "$BIN_DIR/$BIN_NAME"
-    print_success "已安装命令: $BIN_DIR/$BIN_NAME"
+    chmod +x "$target_dir/$BIN_NAME"
+    print_success "已安装命令: $target_dir/$BIN_NAME"
 
-    # 自动添加到 PATH
-    if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+    # 如果安装到 ~/.local/bin，需要配置 PATH
+    if [ "$target_dir" = "$BIN_DIR" ] && [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
         local shell_rc=""
         if [ -n "$ZSH_VERSION" ] || [ -f "$HOME/.zshrc" ]; then
             shell_rc="$HOME/.zshrc"
@@ -299,8 +304,8 @@ SCRIPT
             print_success "已添加 PATH 配置到 $shell_rc"
         fi
 
-        # 立即生效（当前 shell）
-        export PATH="$HOME/.local/bin:$PATH"
+        print_warning "请运行以下命令使 PATH 生效，或重新打开终端："
+        echo "  source $shell_rc"
     fi
 }
 
