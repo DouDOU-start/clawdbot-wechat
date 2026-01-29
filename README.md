@@ -4,19 +4,13 @@
 
 ## 安装
 
-### 方式 A：从 npm 安装
 ```bash
-clawdbot plugins install @clawdbot/wecom
+clawdbot plugins install --link /path/to/clawdbot-wechat
 clawdbot plugins enable wecom
 clawdbot gateway restart
 ```
 
-### 方式 B：本地开发（link）
-```bash
-clawdbot plugins install --link extensions/wecom
-clawdbot plugins enable wecom
-clawdbot gateway restart
-```
+> 💡 **提示**：将 `/path/to/clawdbot-wechat` 替换为本项目的实际路径。
 
 ## 配置
 
