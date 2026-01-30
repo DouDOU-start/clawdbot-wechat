@@ -1,5 +1,5 @@
-declare module "clawdbot/plugin-sdk" {
-  export type ClawdbotConfig = {
+declare module "openclaw/plugin-sdk" {
+  export type OpenclawConfig = {
     channels?: {
       wecom?: {
         accounts?: Record<string, unknown>;
@@ -19,7 +19,7 @@ declare module "clawdbot/plugin-sdk" {
     channel: {
       routing: {
         resolveAgentRoute: (params: {
-          cfg: ClawdbotConfig;
+          cfg: OpenclawConfig;
           channel: string;
           accountId: string;
           peer: { kind: string; id: string };
@@ -36,7 +36,7 @@ declare module "clawdbot/plugin-sdk" {
         }) => Promise<void>;
       };
       reply: {
-        resolveEnvelopeFormatOptions: (cfg: ClawdbotConfig) => Record<string, unknown>;
+        resolveEnvelopeFormatOptions: (cfg: OpenclawConfig) => Record<string, unknown>;
         formatAgentEnvelope: (params: {
           channel: string;
           from: string;
@@ -47,7 +47,7 @@ declare module "clawdbot/plugin-sdk" {
         finalizeInboundContext: (ctx: Record<string, unknown>) => Record<string, unknown> & { SessionKey?: string };
         dispatchReplyWithBufferedBlockDispatcher: (params: {
           ctx: Record<string, unknown>;
-          cfg: ClawdbotConfig;
+          cfg: OpenclawConfig;
           dispatcherOptions: {
             deliver: (payload: { text?: string }) => Promise<void>;
             onError?: (err: unknown, info: { kind: string }) => void;
@@ -56,7 +56,7 @@ declare module "clawdbot/plugin-sdk" {
       };
       text: {
         resolveMarkdownTableMode: (params: {
-          cfg: ClawdbotConfig;
+          cfg: OpenclawConfig;
           channel: string;
           accountId: string;
         }) => string;
@@ -84,7 +84,7 @@ declare module "clawdbot/plugin-sdk" {
   export type GatewayContext<TAccount> = {
     account: TAccount;
     accountId: string;
-    cfg: ClawdbotConfig;
+    cfg: OpenclawConfig;
     runtime: {
       log?: (message: string) => void;
       error?: (message: string) => void;
@@ -122,19 +122,19 @@ declare module "clawdbot/plugin-sdk" {
     reload: { configPrefixes: string[] };
     configSchema: unknown;
     config: {
-      listAccountIds: (cfg: ClawdbotConfig) => string[];
-      resolveAccount: (cfg: ClawdbotConfig, accountId: string) => TAccount;
-      defaultAccountId: (cfg: ClawdbotConfig) => string;
-      setAccountEnabled: (params: { cfg: ClawdbotConfig; accountId: string; enabled: boolean }) => void;
-      deleteAccount: (params: { cfg: ClawdbotConfig; accountId: string }) => void;
+      listAccountIds: (cfg: OpenclawConfig) => string[];
+      resolveAccount: (cfg: OpenclawConfig, accountId: string) => TAccount;
+      defaultAccountId: (cfg: OpenclawConfig) => string;
+      setAccountEnabled: (params: { cfg: OpenclawConfig; accountId: string; enabled: boolean }) => void;
+      deleteAccount: (params: { cfg: OpenclawConfig; accountId: string }) => void;
       isConfigured: (account: TAccount) => boolean;
       describeAccount: (account: TAccount) => ChannelAccountSnapshot;
-      resolveAllowFrom: (params: { cfg: ClawdbotConfig; accountId: string }) => string[];
+      resolveAllowFrom: (params: { cfg: OpenclawConfig; accountId: string }) => string[];
       formatAllowFrom: (params: { allowFrom: string[] }) => string[];
     };
     security: {
       resolveDmPolicy: (params: {
-        cfg: ClawdbotConfig;
+        cfg: OpenclawConfig;
         accountId: string;
         account: TAccount;
       }) => {
@@ -196,21 +196,21 @@ declare module "clawdbot/plugin-sdk" {
   export function normalizeAccountId(accountId: string | null | undefined): string;
   export function defineChannelConfigSchema(schema: unknown): unknown;
   export function setAccountEnabledInConfigSection(params: {
-    cfg: ClawdbotConfig;
+    cfg: OpenclawConfig;
     sectionKey: string;
     accountId: string;
     enabled: boolean;
     allowTopLevel?: boolean;
   }): void;
   export function deleteAccountFromConfigSection(params: {
-    cfg: ClawdbotConfig;
+    cfg: OpenclawConfig;
     sectionKey: string;
     clearBaseFields?: string[];
     accountId: string;
   }): void;
   export function formatPairingApproveHint(channel: string): string;
 
-  export type ClawdbotPluginApi = {
+  export type OpenclawPluginApi = {
     runtime: PluginRuntime;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     registerChannel: (params: { plugin: ChannelPlugin<any> }) => void;

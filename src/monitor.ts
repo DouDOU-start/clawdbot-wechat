@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import crypto from "node:crypto";
 
-import type { ClawdbotConfig, PluginRuntime } from "clawdbot/plugin-sdk";
+import type { OpenclawConfig, PluginRuntime } from "openclaw/plugin-sdk";
 
 import type {
   ResolvedWecomAccount,
@@ -27,7 +27,7 @@ export type WecomRuntimeEnv = {
 
 type WecomWebhookTarget = {
   account: ResolvedWecomAccount;
-  config: ClawdbotConfig;
+  config: OpenclawConfig;
   runtime: WecomRuntimeEnv;
   core: PluginRuntime;
   path: string;

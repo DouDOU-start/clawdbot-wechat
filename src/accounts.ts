@@ -1,21 +1,21 @@
-import type { ClawdbotConfig } from "clawdbot/plugin-sdk";
-import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "clawdbot/plugin-sdk";
+import type { OpenclawConfig } from "openclaw/plugin-sdk";
+import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk";
 
 import type { ResolvedWecomAccount, WecomAccountConfig, WecomConfig } from "./types.js";
 
-function listConfiguredAccountIds(cfg: ClawdbotConfig): string[] {
+function listConfiguredAccountIds(cfg: OpenclawConfig): string[] {
   const accounts = (cfg.channels?.wecom as WecomConfig | undefined)?.accounts;
   if (!accounts || typeof accounts !== "object") return [];
   return Object.keys(accounts).filter(Boolean);
 }
 
-export function listWecomAccountIds(cfg: ClawdbotConfig): string[] {
+export function listWecomAccountIds(cfg: OpenclawConfig): string[] {
   const ids = listConfiguredAccountIds(cfg);
   if (ids.length === 0) return [DEFAULT_ACCOUNT_ID];
   return ids.sort((a, b) => a.localeCompare(b));
 }
 
-export function resolveDefaultWecomAccountId(cfg: ClawdbotConfig): string {
+export function resolveDefaultWecomAccountId(cfg: OpenclawConfig): string {
   const wecomConfig = cfg.channels?.wecom as WecomConfig | undefined;
   if (wecomConfig?.defaultAccount?.trim()) return wecomConfig.defaultAccount.trim();
   const ids = listWecomAccountIds(cfg);
@@ -24,7 +24,7 @@ export function resolveDefaultWecomAccountId(cfg: ClawdbotConfig): string {
 }
 
 function resolveAccountConfig(
-  cfg: ClawdbotConfig,
+  cfg: OpenclawConfig,
   accountId: string,
 ): WecomAccountConfig | undefined {
   const accounts = (cfg.channels?.wecom as WecomConfig | undefined)?.accounts;
@@ -32,7 +32,7 @@ function resolveAccountConfig(
   return accounts[accountId] as WecomAccountConfig | undefined;
 }
 
-function mergeWecomAccountConfig(cfg: ClawdbotConfig, accountId: string): WecomAccountConfig {
+function mergeWecomAccountConfig(cfg: OpenclawConfig, accountId: string): WecomAccountConfig {
   const raw = (cfg.channels?.wecom ?? {}) as WecomConfig;
   const { accounts: _ignored, defaultAccount: _ignored2, ...base } = raw;
   const account = resolveAccountConfig(cfg, accountId) ?? {};
@@ -40,7 +40,7 @@ function mergeWecomAccountConfig(cfg: ClawdbotConfig, accountId: string): WecomA
 }
 
 export function resolveWecomAccount(params: {
-  cfg: ClawdbotConfig;
+  cfg: OpenclawConfig;
   accountId?: string | null;
 }): ResolvedWecomAccount {
   const accountId = normalizeAccountId(params.accountId);
@@ -75,7 +75,7 @@ export function resolveWecomAccount(params: {
   };
 }
 
-export function listEnabledWecomAccounts(cfg: ClawdbotConfig): ResolvedWecomAccount[] {
+export function listEnabledWecomAccounts(cfg: OpenclawConfig): ResolvedWecomAccount[] {
   return listWecomAccountIds(cfg)
     .map((accountId) => resolveWecomAccount({ cfg, accountId }))
     .filter((account) => account.enabled);

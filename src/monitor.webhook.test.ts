@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
 
-import type { ClawdbotConfig, PluginRuntime } from "clawdbot/plugin-sdk";
+import type { OpenclawConfig, PluginRuntime } from "openclaw/plugin-sdk";
 
 import type { ResolvedWecomAccount } from "./types.js";
 import { computeWecomMsgSignature, decryptWecomEncrypted, encryptWecomPlaintext } from "./crypto.js";
@@ -45,7 +45,7 @@ describe("handleWecomWebhookRequest", () => {
 
     const unregister = registerWecomWebhookTarget({
       account,
-      config: {} as ClawdbotConfig,
+      config: {} as OpenclawConfig,
       runtime: {},
       core: {} as PluginRuntime,
       path: "/hook",
@@ -93,7 +93,7 @@ describe("handleWecomWebhookRequest", () => {
 
     const unregister = registerWecomWebhookTarget({
       account,
-      config: {} as ClawdbotConfig,
+      config: {} as OpenclawConfig,
       runtime: {},
       core: {} as PluginRuntime,
       path: "/hook",

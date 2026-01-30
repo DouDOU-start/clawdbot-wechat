@@ -1,15 +1,15 @@
 import type {
   ChannelAccountSnapshot,
   ChannelPlugin,
-  ClawdbotConfig,
+  OpenclawConfig,
   PluginRuntime,
-} from "clawdbot/plugin-sdk";
+} from "openclaw/plugin-sdk";
 import {
   DEFAULT_ACCOUNT_ID,
   deleteAccountFromConfigSection,
   formatPairingApproveHint,
   setAccountEnabledInConfigSection,
-} from "clawdbot/plugin-sdk";
+} from "openclaw/plugin-sdk";
 
 import { listWecomAccountIds, resolveDefaultWecomAccountId, resolveWecomAccount } from "./accounts.js";
 import { wecomConfigSchema } from "./config-schema.js";
@@ -51,12 +51,12 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
   reload: { configPrefixes: ["channels.wecom"] },
   configSchema: wecomConfigSchema,
   config: {
-    listAccountIds: (cfg) => listWecomAccountIds(cfg as ClawdbotConfig),
-    resolveAccount: (cfg, accountId) => resolveWecomAccount({ cfg: cfg as ClawdbotConfig, accountId }),
-    defaultAccountId: (cfg) => resolveDefaultWecomAccountId(cfg as ClawdbotConfig),
+    listAccountIds: (cfg) => listWecomAccountIds(cfg as OpenclawConfig),
+    resolveAccount: (cfg, accountId) => resolveWecomAccount({ cfg: cfg as OpenclawConfig, accountId }),
+    defaultAccountId: (cfg) => resolveDefaultWecomAccountId(cfg as OpenclawConfig),
     setAccountEnabled: ({ cfg, accountId, enabled }) =>
       setAccountEnabledInConfigSection({
-        cfg: cfg as ClawdbotConfig,
+        cfg: cfg as OpenclawConfig,
         sectionKey: "wecom",
         accountId,
         enabled,
@@ -64,7 +64,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
       }),
     deleteAccount: ({ cfg, accountId }) =>
       deleteAccountFromConfigSection({
-        cfg: cfg as ClawdbotConfig,
+        cfg: cfg as OpenclawConfig,
         sectionKey: "wecom",
         clearBaseFields: ["name", "webhookPath", "token", "encodingAESKey", "receiveId", "welcomeText"],
         accountId,
@@ -78,7 +78,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
       webhookPath: account.config.webhookPath ?? "/wecom",
     }),
     resolveAllowFrom: ({ cfg, accountId }) => {
-      const account = resolveWecomAccount({ cfg: cfg as ClawdbotConfig, accountId });
+      const account = resolveWecomAccount({ cfg: cfg as OpenclawConfig, accountId });
       return (account.config.dm?.allowFrom ?? []).map((entry) => String(entry));
     },
     formatAllowFrom: ({ allowFrom }) =>
@@ -90,7 +90,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
   security: {
     resolveDmPolicy: ({ cfg, accountId, account }) => {
       const resolvedAccountId = accountId ?? account.accountId ?? DEFAULT_ACCOUNT_ID;
-      const useAccountPath = Boolean((cfg as ClawdbotConfig).channels?.wecom?.accounts?.[resolvedAccountId]);
+      const useAccountPath = Boolean((cfg as OpenclawConfig).channels?.wecom?.accounts?.[resolvedAccountId]);
       const basePath = useAccountPath ? `channels.wecom.accounts.${resolvedAccountId}.` : "channels.wecom.";
       return {
         policy: account.config.dm?.policy ?? "pairing",
@@ -288,7 +288,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
       const path = (account.config.webhookPath ?? "/wecom").trim();
       const unregister = registerWecomWebhookTarget({
         account,
-        config: ctx.cfg as ClawdbotConfig,
+        config: ctx.cfg as OpenclawConfig,
         runtime: ctx.runtime,
         // The HTTP handler resolves the active PluginRuntime via getWecomRuntime().
         // The stored target only needs to be decrypt/verify-capable.
