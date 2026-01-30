@@ -112,7 +112,21 @@ function pruneStreams(log?: (message: string) => void): void {
 function truncateUtf8Bytes(text: string, maxBytes: number): string {
   const buf = Buffer.from(text, "utf8");
   if (buf.length <= maxBytes) return text;
-  const slice = buf.subarray(buf.length - maxBytes);
+  // 从开头截取，保留前 maxBytes 字节
+  let slice = buf.subarray(0, maxBytes);
+  // 确保不会截断多字节 UTF-8 字符（中文等）
+  // UTF-8 多字节字符的后续字节以 10xxxxxx (0x80-0xBF) 开头
+  while (slice.length > 0 && (slice[slice.length - 1] & 0xc0) === 0x80) {
+    slice = slice.subarray(0, slice.length - 1);
+  }
+  // 如果最后一个字节是多字节字符的开始字节，也需要移除
+  if (slice.length > 0) {
+    const lastByte = slice[slice.length - 1];
+    // 检查是否是多字节字符的开始字节（110xxxxx, 1110xxxx, 11110xxx）
+    if ((lastByte & 0xe0) === 0xc0 || (lastByte & 0xf0) === 0xe0 || (lastByte & 0xf8) === 0xf0) {
+      slice = slice.subarray(0, slice.length - 1);
+    }
+  }
   return slice.toString("utf8");
 }
 
@@ -535,7 +549,7 @@ function buildStreamPlaceholderReply(streamId: string): { msgtype: "stream"; str
       id: streamId,
       finish: false,
       // Spec: "第一次回复内容为 1" works as a minimal placeholder.
-      content: "...",
+      content: "收到请稍等",
     },
   };
 }
