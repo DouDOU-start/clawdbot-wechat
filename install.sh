@@ -251,12 +251,50 @@ case "${1:-help}" in
         npm install --silent
         echo -e "${GREEN}✓ 更新完成${NC}"
         if command -v openclaw &> /dev/null; then
+            # 备份并清理 wecom 配置，避免死循环
+            echo -e "${BLUE}→ 正在备份并清理配置...${NC}"
+            node -e "
+const fs = require('fs');
+try {
+    const config = JSON.parse(fs.readFileSync('$CONFIG_FILE', 'utf8'));
+    // 备份 wecom channel 配置
+    const wecomBackup = config.channels && config.channels.wecom;
+    if (wecomBackup) {
+        fs.writeFileSync('$CONFIG_FILE.wecom.bak', JSON.stringify(wecomBackup, null, 2));
+        delete config.channels.wecom;
+    }
+    // 清理 plugins 中的 wecom 配置
+    if (config.plugins) {
+        if (config.plugins.entries && config.plugins.entries.wecom) delete config.plugins.entries.wecom;
+        if (config.plugins.installs && config.plugins.installs.wecom) delete config.plugins.installs.wecom;
+    }
+    fs.writeFileSync('$CONFIG_FILE', JSON.stringify(config, null, 2));
+} catch (e) {}
+" 2>/dev/null || true
+
             echo -e "${BLUE}→ 正在重新注册插件...${NC}"
-            openclaw plugins remove wecom 2>/dev/null || true
-            openclaw plugins install --link "$INSTALL_DIR" 2>/dev/null || true
-            openclaw plugins enable wecom 2>/dev/null || true
+            openclaw plugins install --link "$INSTALL_DIR" || echo -e "${RED}插件安装失败${NC}"
+            openclaw plugins enable wecom || echo -e "${RED}插件启用失败${NC}"
+
+            # 恢复 wecom channel 配置
+            if [ -f "$CONFIG_FILE.wecom.bak" ]; then
+                echo -e "${BLUE}→ 正在恢复 wecom 配置...${NC}"
+                node -e "
+const fs = require('fs');
+try {
+    const config = JSON.parse(fs.readFileSync('$CONFIG_FILE', 'utf8'));
+    const wecomBackup = JSON.parse(fs.readFileSync('$CONFIG_FILE.wecom.bak', 'utf8'));
+    if (!config.channels) config.channels = {};
+    config.channels.wecom = wecomBackup;
+    fs.writeFileSync('$CONFIG_FILE', JSON.stringify(config, null, 2));
+    fs.unlinkSync('$CONFIG_FILE.wecom.bak');
+    console.log('已恢复 wecom 配置');
+} catch (e) { console.error(e); }
+" || true
+            fi
+
             echo -e "${BLUE}→ 正在重启 gateway...${NC}"
-            openclaw gateway restart 2>/dev/null || echo "请手动重启: openclaw gateway restart"
+            openclaw gateway restart || echo "请手动重启: openclaw gateway restart"
         fi
         ;;
     config)
@@ -354,10 +392,44 @@ main() {
 
     # 检查 openclaw 是否存在
     if command -v openclaw &> /dev/null; then
+        # 先清理可能存在的无效 wecom 配置，避免死循环
+        if [ -f "$CONFIG_FILE" ]; then
+            print_info "正在清理旧配置..."
+            node -e "
+const fs = require('fs');
+try {
+    const config = JSON.parse(fs.readFileSync('$CONFIG_FILE', 'utf8'));
+    let changed = false;
+    // 清理 channels.wecom
+    if (config.channels && config.channels.wecom) {
+        delete config.channels.wecom;
+        changed = true;
+    }
+    // 清理 plugins 中的 wecom 相关配置
+    if (config.plugins) {
+        if (config.plugins.entries && config.plugins.entries.wecom) {
+            delete config.plugins.entries.wecom;
+            changed = true;
+        }
+        if (config.plugins.installs && config.plugins.installs.wecom) {
+            delete config.plugins.installs.wecom;
+            changed = true;
+        }
+    }
+    if (changed) {
+        fs.writeFileSync('$CONFIG_FILE', JSON.stringify(config, null, 2));
+        console.log('已清理旧 wecom 配置');
+    }
+} catch (e) {
+    // 忽略错误
+}
+" 2>/dev/null || true
+        fi
+
         echo ""
         print_info "正在注册插件..."
-        openclaw plugins install --link "$INSTALL_DIR" 2>/dev/null || true
-        openclaw plugins enable wecom 2>/dev/null || true
+        openclaw plugins install --link "$INSTALL_DIR" || print_warning "插件安装失败"
+        openclaw plugins enable wecom || print_warning "插件启用失败"
         print_success "插件注册完成"
 
         # 询问是否进行配置
@@ -369,7 +441,7 @@ main() {
 
         echo ""
         print_info "正在重启 gateway..."
-        openclaw gateway restart 2>/dev/null || print_warning "请手动重启 gateway: openclaw gateway restart"
+        openclaw gateway restart || print_warning "请手动重启 gateway: openclaw gateway restart"
     else
         print_warning "未检测到 openclaw，请手动完成以下步骤："
         echo "  1. openclaw plugins install --link $INSTALL_DIR"
