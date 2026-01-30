@@ -627,9 +627,27 @@ function buildStreamReplyFromState(state: StreamState): StreamReply {
       msgtype: "image" as const,
       image: { base64: img.base64, md5: img.md5 },
     }));
+    // 调试：输出第一张图片的信息
+    const firstImg = state.images[0];
+    console.log(`[wecom-debug] first image: base64 length=${firstImg.base64.length}, md5=${firstImg.md5}`);
+    console.log(`[wecom-debug] msg_item count=${reply.stream.msg_item.length}`);
   } else if (state.finished) {
     console.log(`[wecom-debug] buildStreamReply: finished=true but no images (images.length=${state.images.length})`);
   }
+
+  // 调试：输出完整响应结构（不含 base64 内容）
+  const debugReply = {
+    ...reply,
+    stream: {
+      ...reply.stream,
+      content: reply.stream.content.slice(0, 100) + (reply.stream.content.length > 100 ? '...' : ''),
+      msg_item: reply.stream.msg_item?.map(item => ({
+        msgtype: item.msgtype,
+        image: { base64_length: item.image.base64.length, md5: item.image.md5 }
+      }))
+    }
+  };
+  console.log(`[wecom-debug] reply structure: ${JSON.stringify(debugReply)}`);
 
   return reply;
 }
@@ -1111,6 +1129,11 @@ export async function handleWecomWebhookRequest(
       images: [],
       proactiveSent: false,
     });
+
+    // 调试：输出将要加密发送的 JSON 长度
+    const plainJson = JSON.stringify(reply);
+    console.log(`[wecom-debug] stream refresh response: plainJson length=${plainJson.length}, has msg_item=${!!reply.stream.msg_item}, msg_item_count=${reply.stream.msg_item?.length ?? 0}`);
+
     jsonOk(res, buildEncryptedJsonReply({
       account: target.account,
       plaintextJson: reply,
