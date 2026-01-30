@@ -1,14 +1,14 @@
 #!/bin/bash
-# Clawdbot WeCom 插件安装/更新脚本
+# OpenClaw WeCom 插件安装/更新脚本
 # 用法: curl -sSL https://raw.githubusercontent.com/DouDOU-start/clawdbot-wechat/master/install.sh | bash
 
 set -e
 
-INSTALL_DIR="${CLAWDBOT_WECOM_DIR:-$HOME/clawdbot-wechat}"
+INSTALL_DIR="${OPENCLAW_WECOM_DIR:-$HOME/clawdbot-wechat}"
 REPO_URL="https://github.com/DouDOU-start/clawdbot-wechat.git"
-CONFIG_FILE="$HOME/.clawdbot/clawdbot.json"
+CONFIG_FILE="$HOME/.openclaw/openclaw.json"
 BIN_DIR="$HOME/.local/bin"
-BIN_NAME="clawdbot-wecom"
+BIN_NAME="openclaw-wecom"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -20,7 +20,7 @@ NC='\033[0m' # No Color
 print_banner() {
     echo ""
     echo -e "${BLUE}========================================"
-    echo "  Clawdbot WeCom 插件安装脚本"
+    echo "  OpenClaw WeCom 插件安装脚本"
     echo -e "========================================${NC}"
     echo ""
 }
@@ -229,10 +229,10 @@ install_local_command() {
 
     cat > "$target_dir/$BIN_NAME" << 'SCRIPT'
 #!/bin/bash
-# Clawdbot WeCom 插件管理命令
+# OpenClaw WeCom 插件管理命令
 
-INSTALL_DIR="${CLAWDBOT_WECOM_DIR:-$HOME/clawdbot-wechat}"
-CONFIG_FILE="$HOME/.clawdbot/clawdbot.json"
+INSTALL_DIR="${OPENCLAW_WECOM_DIR:-$HOME/clawdbot-wechat}"
+CONFIG_FILE="$HOME/.openclaw/openclaw.json"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -241,7 +241,7 @@ NC='\033[0m'
 
 case "${1:-help}" in
     update|upgrade)
-        echo -e "${BLUE}→ 正在更新 Clawdbot WeCom 插件...${NC}"
+        echo -e "${BLUE}→ 正在更新 OpenClaw WeCom 插件...${NC}"
         if [ ! -d "$INSTALL_DIR" ]; then
             echo -e "${RED}✗ 插件未安装，请先运行安装脚本${NC}"
             exit 1
@@ -250,20 +250,20 @@ case "${1:-help}" in
         git pull
         npm install --silent
         echo -e "${GREEN}✓ 更新完成${NC}"
-        if command -v clawdbot &> /dev/null; then
+        if command -v openclaw &> /dev/null; then
             echo -e "${BLUE}→ 正在重新注册插件...${NC}"
-            clawdbot plugins uninstall wecom 2>/dev/null || true
-            clawdbot plugins install --link "$INSTALL_DIR" 2>/dev/null || true
-            clawdbot plugins enable wecom 2>/dev/null || true
+            openclaw plugins remove wecom 2>/dev/null || true
+            openclaw plugins install --link "$INSTALL_DIR" 2>/dev/null || true
+            openclaw plugins enable wecom 2>/dev/null || true
             echo -e "${BLUE}→ 正在重启 gateway...${NC}"
-            clawdbot gateway restart 2>/dev/null || echo "请手动重启: clawdbot gateway restart"
+            openclaw gateway restart 2>/dev/null || echo "请手动重启: openclaw gateway restart"
         fi
         ;;
     config)
         echo -e "${BLUE}→ 重新运行配置向导...${NC}"
-        curl -sSL https://raw.githubusercontent.com/DouDOU-start/clawdbot-wechat/master/install.sh -o /tmp/clawdbot-wecom-install.sh
-        bash /tmp/clawdbot-wecom-install.sh --config-only
-        rm -f /tmp/clawdbot-wecom-install.sh
+        curl -sSL https://raw.githubusercontent.com/DouDOU-start/clawdbot-wechat/master/install.sh -o /tmp/openclaw-wecom-install.sh
+        bash /tmp/openclaw-wecom-install.sh --config-only
+        rm -f /tmp/openclaw-wecom-install.sh
         ;;
     status)
         echo "安装目录: $INSTALL_DIR"
@@ -277,7 +277,7 @@ case "${1:-help}" in
         fi
         ;;
     help|--help|-h|*)
-        echo "用法: clawdbot-wecom <命令>"
+        echo "用法: openclaw-wecom <命令>"
         echo ""
         echo "命令:"
         echo "  update   更新插件到最新版本"
@@ -303,7 +303,7 @@ SCRIPT
         # 检查是否已经添加过
         if ! grep -q 'export PATH="\$HOME/.local/bin:\$PATH"' "$shell_rc" 2>/dev/null; then
             echo '' >> "$shell_rc"
-            echo '# Clawdbot WeCom 插件' >> "$shell_rc"
+            echo '# OpenClaw WeCom 插件' >> "$shell_rc"
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$shell_rc"
             print_success "已添加 PATH 配置到 $shell_rc"
         fi
@@ -333,9 +333,9 @@ main() {
         local new_version=$(git rev-parse HEAD 2>/dev/null || echo "")
 
         # 如果脚本有更新，重新执行本地脚本
-        if [ "$old_version" != "$new_version" ] && [ -z "$CLAWDBOT_WECOM_REEXEC" ]; then
+        if [ "$old_version" != "$new_version" ] && [ -z "$OPENCLAW_WECOM_REEXEC" ]; then
             print_info "检测到脚本更新，重新加载..."
-            export CLAWDBOT_WECOM_REEXEC=1
+            export OPENCLAW_WECOM_REEXEC=1
             exec bash "$INSTALL_DIR/install.sh" "$@"
         fi
 
@@ -352,12 +352,12 @@ main() {
     npm install --silent
     print_success "依赖安装完成"
 
-    # 检查 clawdbot 是否存在
-    if command -v clawdbot &> /dev/null; then
+    # 检查 openclaw 是否存在
+    if command -v openclaw &> /dev/null; then
         echo ""
         print_info "正在注册插件..."
-        clawdbot plugins install --link "$INSTALL_DIR" 2>/dev/null || true
-        clawdbot plugins enable wecom 2>/dev/null || true
+        openclaw plugins install --link "$INSTALL_DIR" 2>/dev/null || true
+        openclaw plugins enable wecom 2>/dev/null || true
         print_success "插件注册完成"
 
         # 询问是否进行配置
@@ -369,13 +369,13 @@ main() {
 
         echo ""
         print_info "正在重启 gateway..."
-        clawdbot gateway restart 2>/dev/null || print_warning "请手动重启 gateway: clawdbot gateway restart"
+        openclaw gateway restart 2>/dev/null || print_warning "请手动重启 gateway: openclaw gateway restart"
     else
-        print_warning "未检测到 clawdbot，请手动完成以下步骤："
-        echo "  1. clawdbot plugins install --link $INSTALL_DIR"
-        echo "  2. clawdbot plugins enable wecom"
-        echo "  3. 编辑 ~/.clawdbot/clawdbot.json 添加 wecom 配置"
-        echo "  4. clawdbot gateway restart"
+        print_warning "未检测到 openclaw，请手动完成以下步骤："
+        echo "  1. openclaw plugins install --link $INSTALL_DIR"
+        echo "  2. openclaw plugins enable wecom"
+        echo "  3. 编辑 ~/.openclaw/openclaw.json 添加 wecom 配置"
+        echo "  4. openclaw gateway restart"
     fi
 
     # 安装本地命令
@@ -401,9 +401,9 @@ main() {
 # 解析参数并运行
 if [[ "$1" == "--config-only" ]]; then
     run_config_wizard
-    if command -v clawdbot &> /dev/null; then
+    if command -v openclaw &> /dev/null; then
         print_info "正在重启 gateway..."
-        clawdbot gateway restart 2>/dev/null || print_warning "请手动重启 gateway: clawdbot gateway restart"
+        openclaw gateway restart 2>/dev/null || print_warning "请手动重启 gateway: openclaw gateway restart"
     fi
 else
     main
