@@ -565,8 +565,8 @@ function buildStreamPlaceholderReply(streamId: string): { msgtype: "stream"; str
     stream: {
       id: streamId,
       finish: false,
-      // 注意：企业微信客户端对 finish=false 的流式消息有显示长度限制
-      content: "请稍等..",
+      // 企业微信客户端对 finish=false 的消息会截掉最后一个字符，末尾加空格补偿
+      content: "请稍等... ",
     },
   };
 }
@@ -605,7 +605,8 @@ function buildStreamReplyFromState(state: StreamState): StreamReply {
     stream: {
       id: state.streamId,
       finish: state.finished,
-      content,
+      // 企业微信客户端对 finish=false 的消息会截掉最后一个字符，加一个空格补偿
+      content: state.finished ? content : content + " ",
     },
   };
 
