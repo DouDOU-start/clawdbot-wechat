@@ -95,6 +95,9 @@ const IMAGE_URL_PATTERNS = [
   /(?<!\()(https?:\/\/[^\s<>"']+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s<>"']*)?)(?!\))/gi, // 纯 URL
 ];
 
+// 匹配 data URL 格式的图片
+const DATA_URL_PATTERN = /data:image\/(?:png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=]+)/gi;
+
 /**
  * 从文本中提取图片 URL
  */
@@ -152,31 +155,71 @@ async function downloadImageAsBase64(url: string): Promise<StreamImage | null> {
 }
 
 /**
- * 处理文本中的图片，下载并转换为 StreamImage
- * 返回处理后的文本（移除图片 URL）和图片列表
+ * 从 data URL 提取 base64 图片
  */
-async function processImagesInText(text: string): Promise<{ text: string; images: StreamImage[] }> {
-  const urls = extractImageUrls(text);
-  if (urls.length === 0) {
-    return { text, images: [] };
+function extractDataUrlImages(text: string): { dataUrls: string[]; base64List: StreamImage[] } {
+  const dataUrls: string[] = [];
+  const base64List: StreamImage[] = [];
+
+  // 重置正则状态
+  DATA_URL_PATTERN.lastIndex = 0;
+
+  let match;
+  while ((match = DATA_URL_PATTERN.exec(text)) !== null) {
+    const fullMatch = match[0];
+    const base64Data = match[1];
+    if (base64Data && base64Data.length > 100) {
+      // 确保有实际内容
+      try {
+        const buffer = Buffer.from(base64Data, "base64");
+        // 检查大小限制
+        if (buffer.length <= MAX_IMAGE_SIZE) {
+          const md5 = crypto.createHash("md5").update(buffer).digest("hex");
+          dataUrls.push(fullMatch);
+          base64List.push({ base64: base64Data, md5 });
+        }
+      } catch {
+        // 无效的 base64，跳过
+      }
+    }
   }
 
+  return { dataUrls, base64List };
+}
+
+/**
+ * 处理文本中的图片，下载并转换为 StreamImage
+ * 支持 URL 和 data URL 两种格式
+ * 返回处理后的文本（移除图片）和图片列表
+ */
+async function processImagesInText(text: string): Promise<{ text: string; images: StreamImage[] }> {
   const images: StreamImage[] = [];
   let processedText = text;
 
-  // 并行下载图片（最多10张）
-  const downloadPromises = urls.slice(0, 10).map((url) => downloadImageAsBase64(url));
-  const results = await Promise.all(downloadPromises);
+  // 1. 先处理 data URL 格式的图片（无需下载）
+  const { dataUrls, base64List } = extractDataUrlImages(text);
+  for (let i = 0; i < dataUrls.length && images.length < 10; i++) {
+    images.push(base64List[i]);
+    processedText = processedText.replace(dataUrls[i], "");
+  }
 
-  for (let i = 0; i < urls.length && i < 10; i++) {
-    const img = results[i];
-    if (img) {
-      images.push(img);
-      // 从文本中移除已处理的图片 URL（包括 markdown 格式）
-      const url = urls[i];
-      processedText = processedText
-        .replace(new RegExp(`!\\[.*?\\]\\(${escapeRegExp(url)}\\)`, "g"), "")
-        .replace(new RegExp(escapeRegExp(url), "g"), "");
+  // 2. 再处理需要下载的 URL 图片
+  const urls = extractImageUrls(processedText);
+  if (urls.length > 0 && images.length < 10) {
+    const remainingSlots = 10 - images.length;
+    const downloadPromises = urls.slice(0, remainingSlots).map((url) => downloadImageAsBase64(url));
+    const results = await Promise.all(downloadPromises);
+
+    for (let i = 0; i < urls.length && i < remainingSlots; i++) {
+      const img = results[i];
+      if (img) {
+        images.push(img);
+        // 从文本中移除已处理的图片 URL（包括 markdown 格式）
+        const url = urls[i];
+        processedText = processedText
+          .replace(new RegExp(`!\\[.*?\\]\\(${escapeRegExp(url)}\\)`, "g"), "")
+          .replace(new RegExp(escapeRegExp(url), "g"), "");
+      }
     }
   }
 
