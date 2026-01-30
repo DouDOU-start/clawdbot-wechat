@@ -589,11 +589,6 @@ type StreamReply = {
 function buildStreamReplyFromState(state: StreamState): StreamReply {
   let content = truncateUtf8Bytes(state.content, STREAM_MAX_BYTES);
 
-  // 如果内容为空且未完成，显示占位符
-  if (!content.trim() && !state.finished) {
-    content = "收到，请稍等...";
-  }
-
   // 如果已完成但内容为空，显示提示信息
   if (state.finished && !content.trim()) {
     if (state.images.length > 0) {
