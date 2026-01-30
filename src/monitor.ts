@@ -106,8 +106,6 @@ const IMAGE_URL_PATTERNS = [
   /(?<!\()(https?:\/\/[^\s<>"']+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s<>"']*)?)(?!\))/gi, // 纯 URL
 ];
 
-// 匹配 data URL 格式的图片（支持包含换行/空格的 base64）
-const DATA_URL_PATTERN = /data:image\/(?:png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=\s]+)/gi;
 
 // 匹配文件 URL（非图片）
 const FILE_URL_PATTERNS = [
@@ -172,33 +170,78 @@ async function downloadImageAsBase64(url: string): Promise<StreamImage | null> {
 
 /**
  * 从 data URL 提取 base64 图片
+ * 使用更稳健的方式处理各种格式的 base64 数据
  */
 function extractDataUrlImages(text: string): { dataUrls: string[]; base64List: StreamImage[] } {
   const dataUrls: string[] = [];
   const base64List: StreamImage[] = [];
 
-  // 重置正则状态
-  DATA_URL_PATTERN.lastIndex = 0;
+  // 查找所有 data:image 的起始位置
+  const prefix = "data:image/";
+  let searchStart = 0;
 
-  let match;
-  while ((match = DATA_URL_PATTERN.exec(text)) !== null) {
-    const fullMatch = match[0];
-    // 移除 base64 中的空白字符
-    const base64Data = match[1]?.replace(/\s/g, "");
+  while (true) {
+    const idx = text.indexOf(prefix, searchStart);
+    if (idx === -1) break;
+
+    // 找到 base64, 的位置
+    const base64Marker = ";base64,";
+    const markerIdx = text.indexOf(base64Marker, idx);
+    if (markerIdx === -1 || markerIdx > idx + 30) {
+      // 不是有效的 data URL 格式
+      searchStart = idx + 1;
+      continue;
+    }
+
+    const dataStart = markerIdx + base64Marker.length;
+
+    // 从 dataStart 开始，收集所有有效的 base64 字符
+    // 有效字符：A-Z, a-z, 0-9, +, /, =, 以及空白（换行、空格）
+    let dataEnd = dataStart;
+    while (dataEnd < text.length) {
+      const char = text[dataEnd];
+      if (/[A-Za-z0-9+/=\s]/.test(char)) {
+        dataEnd++;
+      } else {
+        break;
+      }
+    }
+
+    const fullMatch = text.slice(idx, dataEnd);
+    const base64WithSpaces = text.slice(dataStart, dataEnd);
+    const base64Data = base64WithSpaces.replace(/\s/g, "");
+
+    console.log(`[wecom-debug] found data URL at idx=${idx}, base64 raw length=${base64WithSpaces.length}, cleaned length=${base64Data.length}`);
+
     if (base64Data && base64Data.length > 100) {
-      // 确保有实际内容
       try {
         const buffer = Buffer.from(base64Data, "base64");
-        // 检查大小限制
-        if (buffer.length <= MAX_IMAGE_SIZE) {
+        // 检查是否是有效的图片数据（PNG/JPEG/GIF/WebP 魔数）
+        const isValidImage = buffer.length > 8 && (
+          // PNG: 89 50 4E 47
+          (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) ||
+          // JPEG: FF D8 FF
+          (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) ||
+          // GIF: 47 49 46 38
+          (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) ||
+          // WebP: 52 49 46 46 ... 57 45 42 50
+          (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46)
+        );
+
+        if (isValidImage && buffer.length <= MAX_IMAGE_SIZE) {
           const md5 = crypto.createHash("md5").update(buffer).digest("hex");
           dataUrls.push(fullMatch);
           base64List.push({ base64: base64Data, md5 });
+          console.log(`[wecom-debug] valid image extracted, size=${buffer.length} bytes, md5=${md5.slice(0, 8)}`);
+        } else {
+          console.log(`[wecom-debug] invalid image data: isValidImage=${isValidImage}, size=${buffer.length}`);
         }
-      } catch {
-        // 无效的 base64，跳过
+      } catch (err) {
+        console.log(`[wecom-debug] base64 decode error: ${String(err)}`);
       }
     }
+
+    searchStart = dataEnd;
   }
 
   return { dataUrls, base64List };
@@ -219,7 +262,12 @@ async function processImagesInText(text: string): Promise<{ text: string; images
   // 调试：如果文本包含 data:image 但没提取到，说明正则有问题
   if (hasDataImageText && dataUrls.length === 0) {
     console.log(`[wecom-debug] WARNING: text contains 'data:image' but extractDataUrlImages found 0 matches`);
-    console.log(`[wecom-debug] text sample: ${text.slice(0, 200)}...`);
+    // 找到 data:image 的位置并显示周围内容
+    const idx = text.indexOf("data:image");
+    console.log(`[wecom-debug] context around 'data:image': ...${text.slice(Math.max(0, idx - 20), idx + 100)}...`);
+  }
+  if (hasDataImageText) {
+    console.log(`[wecom-debug] text contains 'data:image', extracted ${dataUrls.length} images`);
   }
   for (let i = 0; i < dataUrls.length && images.length < 10; i++) {
     images.push(base64List[i]);
