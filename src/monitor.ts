@@ -565,7 +565,7 @@ function buildStreamPlaceholderReply(streamId: string): { msgtype: "stream"; str
     stream: {
       id: streamId,
       finish: false,
-      content: "收到，请稍等...",
+      content: "收到，请稍等... 1",
     },
   };
 }
