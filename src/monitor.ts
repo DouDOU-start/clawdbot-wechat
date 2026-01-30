@@ -622,10 +622,13 @@ function buildStreamReplyFromState(state: StreamState): StreamReply {
 
   // 只有在 finish=true 时才能发送图片
   if (state.finished && state.images.length > 0) {
+    console.log(`[wecom-debug] buildStreamReply: adding ${state.images.length} images to msg_item`);
     reply.stream.msg_item = state.images.slice(0, 10).map((img) => ({
       msgtype: "image" as const,
       image: { base64: img.base64, md5: img.md5 },
     }));
+  } else if (state.finished) {
+    console.log(`[wecom-debug] buildStreamReply: finished=true but no images (images.length=${state.images.length})`);
   }
 
   return reply;
@@ -1093,6 +1096,9 @@ export async function handleWecomWebhookRequest(
       // 更新最后刷新时间
       state.lastRefreshAt = Date.now();
       logVerbose(target, `stream refresh streamId=${streamId} started=${state.started} finished=${state.finished}`);
+      console.log(`[wecom-debug] stream refresh: streamId=${streamId} finished=${state.finished} images=${state.images.length}`);
+    } else {
+      console.log(`[wecom-debug] stream refresh: streamId=${streamId} state not found`);
     }
     const reply = state ? buildStreamReplyFromState(state) : buildStreamReplyFromState({
       streamId: streamId || "unknown",
