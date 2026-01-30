@@ -214,10 +214,17 @@ async function processImagesInText(text: string): Promise<{ text: string; images
   let processedText = text;
 
   // 1. 先处理 data URL 格式的图片（无需下载）
+  const hasDataImageText = text.includes("data:image");
   const { dataUrls, base64List } = extractDataUrlImages(text);
+  // 调试：如果文本包含 data:image 但没提取到，说明正则有问题
+  if (hasDataImageText && dataUrls.length === 0) {
+    console.log(`[wecom-debug] WARNING: text contains 'data:image' but extractDataUrlImages found 0 matches`);
+    console.log(`[wecom-debug] text sample: ${text.slice(0, 200)}...`);
+  }
   for (let i = 0; i < dataUrls.length && images.length < 10; i++) {
     images.push(base64List[i]);
     processedText = processedText.replace(dataUrls[i], "");
+    console.log(`[wecom-debug] extracted data URL image #${i + 1}, base64 length: ${base64List[i].base64.length}`);
   }
 
   // 2. 再处理需要下载的 URL 图片
