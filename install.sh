@@ -251,6 +251,10 @@ case "${1:-help}" in
         npm install --silent
         echo -e "${GREEN}✓ 更新完成${NC}"
         if command -v clawdbot &> /dev/null; then
+            echo -e "${BLUE}→ 正在重新注册插件...${NC}"
+            clawdbot plugins uninstall wecom 2>/dev/null || true
+            clawdbot plugins install --link "$INSTALL_DIR" 2>/dev/null || true
+            clawdbot plugins enable wecom 2>/dev/null || true
             echo -e "${BLUE}→ 正在重启 gateway...${NC}"
             clawdbot gateway restart 2>/dev/null || echo "请手动重启: clawdbot gateway restart"
         fi
