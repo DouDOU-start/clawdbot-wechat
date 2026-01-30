@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "description": "Clawdbot WeCom (WeChat Work) intelligent bot channel plugin",
-  "clawdbot": {
+  "openclaw": {
     "extensions": [
       "./index.ts"
     ],
@@ -26,7 +26,7 @@
       "order": 85
     },
     "install": {
-      "npmSpec": "@clawdbot/wecom",
+      "npmSpec": "@openclaw/wecom",
       "localPath": "extensions/wecom",
       "defaultChoice": "npm"
     }
@@ -36,7 +36,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "clawdbot": "*"
+    "openclaw": "*"
   },
   "dependencies": {
     "zod": "^4.3.6"
