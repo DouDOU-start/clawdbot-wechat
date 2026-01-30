@@ -639,21 +639,6 @@ function parseWecomPlainMessage(raw: string): WecomInboundMessage {
   return parsed as WecomInboundMessage;
 }
 
-async function waitForStreamContent(streamId: string, maxWaitMs: number): Promise<void> {
-  if (maxWaitMs <= 0) return;
-  const startedAt = Date.now();
-  await new Promise<void>((resolve) => {
-    const tick = () => {
-      const state = streams.get(streamId);
-      if (!state) return resolve();
-      if (state.error || state.finished || state.content.trim()) return resolve();
-      if (Date.now() - startedAt >= maxWaitMs) return resolve();
-      setTimeout(tick, 25);
-    };
-    tick();
-  });
-}
-
 async function startAgentForStream(params: {
   target: WecomWebhookTarget;
   accountId: string;
