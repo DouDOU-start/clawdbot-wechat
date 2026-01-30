@@ -1215,7 +1215,7 @@ export async function handleWecomWebhookRequest(
 
   // 首次直接返回，让企业微信通过刷新获取内容
   const state = streams.get(streamId);
-  const initialReply = state
+  const initialReply = state?.content.trim()
     ? buildStreamReplyFromState(state)
     : buildStreamPlaceholderReply(streamId);
   jsonOk(res, buildEncryptedJsonReply({
