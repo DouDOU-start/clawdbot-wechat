@@ -50,6 +50,7 @@ type StreamState = {
   error?: string;
   content: string;
   images: StreamImage[]; // 图片列表，最多10张
+  files: StreamFile[]; // 文件列表
   // 主动消息补发相关
   proactiveSent: boolean; // 是否已通过主动消息发送
   target?: string; // 用户ID 或群聊ID
@@ -106,18 +107,69 @@ const IMAGE_URL_PATTERNS = [
   /(?<!\()(https?:\/\/[^\s<>"']+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s<>"']*)?)(?!\))/gi, // 纯 URL
 ];
 
+// 已知的图片服务域名（这些服务的 URL 可能没有扩展名）
+const KNOWN_IMAGE_HOSTS = [
+  "picsum.photos",
+  "unsplash.com",
+  "images.unsplash.com",
+  "source.unsplash.com",
+  "placekitten.com",
+  "placehold.co",
+  "placeholder.com",
+  "loremflickr.com",
+  "via.placeholder.com",
+  "dummyimage.com",
+  "fakeimg.pl",
+];
 
 // 匹配文件 URL（非图片）
 const FILE_URL_PATTERNS = [
-  /(?<!\()(https?:\/\/[^\s<>"']+\.(?:pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|tar|gz|txt|csv|mp3|mp4|avi|mov|wmv)(?:\?[^\s<>"']*)?)(?!\))/gi,
+  /!\[.*?\]\((https?:\/\/[^\s)]+\.(?:pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|tar|gz|txt|csv)(?:\?[^\s)]*)?)\)/gi, // ![alt](url)
+  /(?<!\()(https?:\/\/[^\s<>"']+\.(?:pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|tar|gz|txt|csv)(?:\?[^\s<>"']*)?)(?!\))/gi, // 纯 URL
 ];
+
+// 文件大小限制：20MB
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 /**
  * 从文本中提取图片 URL
  */
 function extractImageUrls(text: string): string[] {
   const urls = new Set<string>();
+
+  // 1. 匹配带扩展名的图片 URL
   for (const pattern of IMAGE_URL_PATTERNS) {
+    const matches = text.matchAll(pattern);
+    for (const match of matches) {
+      const url = match[1] || match[0];
+      if (url) urls.add(url);
+    }
+  }
+
+  // 2. 匹配已知图片服务的 URL（可能没有扩展名）
+  const urlPattern = /https?:\/\/[^\s<>"')\]]+/gi;
+  const allUrls = text.matchAll(urlPattern);
+  for (const match of allUrls) {
+    const url = match[0];
+    try {
+      const hostname = new URL(url).hostname;
+      if (KNOWN_IMAGE_HOSTS.some(host => hostname === host || hostname.endsWith(`.${host}`))) {
+        urls.add(url);
+      }
+    } catch {
+      // 无效 URL，忽略
+    }
+  }
+
+  return Array.from(urls);
+}
+
+/**
+ * 从文本中提取文件 URL
+ */
+function extractFileUrls(text: string): string[] {
+  const urls = new Set<string>();
+  for (const pattern of FILE_URL_PATTERNS) {
     const matches = text.matchAll(pattern);
     for (const match of matches) {
       const url = match[1] || match[0];
@@ -163,6 +215,69 @@ async function downloadImageAsBase64(url: string): Promise<StreamImage | null> {
     const md5 = crypto.createHash("md5").update(buffer).digest("hex");
 
     return { base64, md5 };
+  } catch {
+    return null;
+  }
+}
+
+/** 文件信息 */
+interface StreamFile {
+  base64: string;
+  md5: string;
+  filename: string;
+  size: number;
+}
+
+/**
+ * 下载文件并转换为 base64
+ */
+async function downloadFileAsBase64(url: string): Promise<StreamFile | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60秒超时
+
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; ClawdbotWecom/1.0)",
+      },
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      return null;
+    }
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+
+    // 检查大小限制
+    if (buffer.length > MAX_FILE_SIZE) {
+      return null;
+    }
+
+    // 从 URL 或 Content-Disposition 中提取文件名
+    let filename = "";
+    const disposition = res.headers.get("content-disposition");
+    if (disposition) {
+      const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (match) {
+        filename = match[1].replace(/['"]/g, "");
+      }
+    }
+    if (!filename) {
+      // 从 URL 提取文件名
+      try {
+        const urlPath = new URL(url).pathname;
+        filename = urlPath.split("/").pop() || "file";
+      } catch {
+        filename = "file";
+      }
+    }
+
+    const base64 = buffer.toString("base64");
+    const md5 = crypto.createHash("md5").update(buffer).digest("hex");
+
+    return { base64, md5, filename, size: buffer.length };
   } catch {
     return null;
   }
@@ -257,22 +372,10 @@ async function processImagesInText(text: string): Promise<{ text: string; images
   let processedText = text;
 
   // 1. 先处理 data URL 格式的图片（无需下载）
-  const hasDataImageText = text.includes("data:image");
   const { dataUrls, base64List } = extractDataUrlImages(text);
-  // 调试：如果文本包含 data:image 但没提取到，说明正则有问题
-  if (hasDataImageText && dataUrls.length === 0) {
-    console.log(`[wecom-debug] WARNING: text contains 'data:image' but extractDataUrlImages found 0 matches`);
-    // 找到 data:image 的位置并显示周围内容
-    const idx = text.indexOf("data:image");
-    console.log(`[wecom-debug] context around 'data:image': ...${text.slice(Math.max(0, idx - 20), idx + 100)}...`);
-  }
-  if (hasDataImageText) {
-    console.log(`[wecom-debug] text contains 'data:image', extracted ${dataUrls.length} images`);
-  }
   for (let i = 0; i < dataUrls.length && images.length < 10; i++) {
     images.push(base64List[i]);
     processedText = processedText.replace(dataUrls[i], "");
-    console.log(`[wecom-debug] extracted data URL image #${i + 1}, base64 length: ${base64List[i].base64.length}`);
   }
 
   // 2. 再处理需要下载的 URL 图片
@@ -301,63 +404,40 @@ async function processImagesInText(text: string): Promise<{ text: string; images
   return { text: processedText, images };
 }
 
+/**
+ * 处理文本中的文件，下载并转换为 StreamFile
+ * 返回处理后的文本（移除文件链接）和文件列表
+ */
+async function processFilesInText(text: string): Promise<{ text: string; files: StreamFile[] }> {
+  const files: StreamFile[] = [];
+  let processedText = text;
+
+  const urls = extractFileUrls(processedText);
+  if (urls.length > 0) {
+    const downloadPromises = urls.slice(0, 10).map((url) => downloadFileAsBase64(url));
+    const results = await Promise.all(downloadPromises);
+
+    for (let i = 0; i < urls.length && i < 10; i++) {
+      const file = results[i];
+      if (file) {
+        files.push(file);
+        // 从文本中移除已处理的文件 URL（包括 markdown 格式）
+        const url = urls[i];
+        processedText = processedText
+          .replace(new RegExp(`!?\\[.*?\\]\\(${escapeRegExp(url)}\\)`, "g"), "")
+          .replace(new RegExp(escapeRegExp(url), "g"), "");
+      }
+    }
+  }
+
+  // 清理多余的空行
+  processedText = processedText.replace(/\n{3,}/g, "\n\n").trim();
+
+  return { text: processedText, files };
+}
+
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * 从文本中提取文件 URL
- */
-function extractFileUrls(text: string): string[] {
-  const urls = new Set<string>();
-  for (const pattern of FILE_URL_PATTERNS) {
-    pattern.lastIndex = 0;
-    const matches = text.matchAll(pattern);
-    for (const match of matches) {
-      const url = match[1] || match[0];
-      if (url) urls.add(url);
-    }
-  }
-  return Array.from(urls);
-}
-
-/**
- * 下载文件并返回 Buffer
- */
-async function downloadFile(url: string): Promise<{ buffer: Buffer; filename: string; contentType: string } | null> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000); // 60秒超时
-
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; ClawdbotWecom/1.0)",
-      },
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) return null;
-
-    const contentType = res.headers.get("content-type") || "application/octet-stream";
-    const buffer = Buffer.from(await res.arrayBuffer());
-
-    // 从 URL 或 Content-Disposition 提取文件名
-    let filename = "file";
-    const disposition = res.headers.get("content-disposition");
-    if (disposition) {
-      const match = disposition.match(/filename[^;=\n]*=(['"]?)([^'"\n;]*)\1/i);
-      if (match?.[2]) filename = match[2];
-    } else {
-      const urlPath = new URL(url).pathname;
-      const lastSegment = urlPath.split("/").pop();
-      if (lastSegment && lastSegment.includes(".")) filename = lastSegment;
-    }
-
-    return { buffer, filename, contentType };
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -369,9 +449,10 @@ async function sendProactiveMessage(params: {
   isGroup: boolean;
   content: string;
   images: StreamImage[];
+  files: StreamFile[];
   log?: (message: string) => void;
 }): Promise<boolean> {
-  const { account, target, isGroup, content, images, log } = params;
+  const { account, target, isGroup, content, images, files, log } = params;
 
   if (!account.outboundConfigured) {
     log?.(`[wecom] 未配置出站 API，无法发送主动消息`);
@@ -420,33 +501,26 @@ async function sendProactiveMessage(params: {
       }
     }
 
-    // 3. 检测并发送文件 URL
-    const fileUrls = extractFileUrls(content);
-    for (const fileUrl of fileUrls) {
+    // 3. 发送已处理的文件
+    for (const file of files) {
       try {
-        log?.(`[wecom] 检测到文件 URL，尝试下载: ${fileUrl}`);
-        const fileData = await downloadFile(fileUrl);
-        if (fileData) {
-          const mediaId = await uploadMedia({
-            account,
-            type: "file",
-            buffer: fileData.buffer,
-            filename: fileData.filename,
-            contentType: fileData.contentType,
-          });
-          const fileResult = await sendFileMessage({
-            account,
-            target,
-            mediaId,
-            isGroup,
-          });
-          if (fileResult.errcode !== 0) {
-            log?.(`[wecom] 主动发送文件失败: ${fileResult.errcode} ${fileResult.errmsg}`);
-          } else {
-            log?.(`[wecom] 主动发送文件成功: ${fileData.filename}`);
-          }
+        const buffer = Buffer.from(file.base64, "base64");
+        const mediaId = await uploadMedia({
+          account,
+          type: "file",
+          buffer,
+          filename: file.filename,
+        });
+        const fileResult = await sendFileMessage({
+          account,
+          target,
+          mediaId,
+          isGroup,
+        });
+        if (fileResult.errcode !== 0) {
+          log?.(`[wecom] 主动发送文件失败: ${fileResult.errcode} ${fileResult.errmsg}`);
         } else {
-          log?.(`[wecom] 文件下载失败: ${fileUrl}`);
+          log?.(`[wecom] 主动发送文件成功: ${file.filename}`);
         }
       } catch (err) {
         log?.(`[wecom] 主动发送文件异常: ${String(err)}`);
@@ -492,6 +566,7 @@ async function checkAndSendProactiveMessages(log?: (message: string) => void): P
           isGroup: state.isGroup ?? false,
           content: state.content,
           images: state.images,
+          files: state.files,
           log,
         });
       }
@@ -622,32 +697,11 @@ function buildStreamReplyFromState(state: StreamState): StreamReply {
 
   // 只有在 finish=true 时才能发送图片
   if (state.finished && state.images.length > 0) {
-    console.log(`[wecom-debug] buildStreamReply: adding ${state.images.length} images to msg_item`);
     reply.stream.msg_item = state.images.slice(0, 10).map((img) => ({
       msgtype: "image" as const,
       image: { base64: img.base64, md5: img.md5 },
     }));
-    // 调试：输出第一张图片的信息
-    const firstImg = state.images[0];
-    console.log(`[wecom-debug] first image: base64 length=${firstImg.base64.length}, md5=${firstImg.md5}`);
-    console.log(`[wecom-debug] msg_item count=${reply.stream.msg_item.length}`);
-  } else if (state.finished) {
-    console.log(`[wecom-debug] buildStreamReply: finished=true but no images (images.length=${state.images.length})`);
   }
-
-  // 调试：输出完整响应结构（不含 base64 内容）
-  const debugReply = {
-    ...reply,
-    stream: {
-      ...reply.stream,
-      content: reply.stream.content.slice(0, 100) + (reply.stream.content.length > 100 ? '...' : ''),
-      msg_item: reply.stream.msg_item?.map(item => ({
-        msgtype: item.msgtype,
-        image: { base64_length: item.image.base64.length, md5: item.image.md5 }
-      }))
-    }
-  };
-  console.log(`[wecom-debug] reply structure: ${JSON.stringify(debugReply)}`);
 
   return reply;
 }
@@ -788,21 +842,25 @@ async function startAgentForStream(params: {
 
   const current = streams.get(streamId);
   if (current) {
-    // 在结束前处理文本中的图片
+    // 在结束前处理文本中的图片和文件
     try {
-      // 调试日志：输出原始内容
-      target.runtime.log?.(`[wecom] processing content for images, length=${current.content.length}`);
-      const urls = extractImageUrls(current.content);
-      target.runtime.log?.(`[wecom] found ${urls.length} image URLs: ${urls.slice(0, 3).join(', ')}${urls.length > 3 ? '...' : ''}`);
-
-      const { text: processedText, images } = await processImagesInText(current.content);
+      // 处理图片
+      const { text: textAfterImages, images } = await processImagesInText(current.content);
       if (images.length > 0) {
-        current.content = processedText;
+        current.content = textAfterImages;
         current.images = images;
         target.runtime.log?.(`[wecom] processed ${images.length} images from response`);
       }
+
+      // 处理文件
+      const { text: textAfterFiles, files } = await processFilesInText(current.content);
+      if (files.length > 0) {
+        current.content = textAfterFiles;
+        current.files = files;
+        target.runtime.log?.(`[wecom] processed ${files.length} files from response`);
+      }
     } catch (err) {
-      target.runtime.error?.(`[${account.accountId}] wecom image processing failed: ${String(err)}`);
+      target.runtime.error?.(`[${account.accountId}] wecom media processing failed: ${String(err)}`);
     }
     current.finished = true;
     current.updatedAt = Date.now();
@@ -1114,9 +1172,6 @@ export async function handleWecomWebhookRequest(
       // 更新最后刷新时间
       state.lastRefreshAt = Date.now();
       logVerbose(target, `stream refresh streamId=${streamId} started=${state.started} finished=${state.finished}`);
-      console.log(`[wecom-debug] stream refresh: streamId=${streamId} finished=${state.finished} images=${state.images.length}`);
-    } else {
-      console.log(`[wecom-debug] stream refresh: streamId=${streamId} state not found`);
     }
     const reply = state ? buildStreamReplyFromState(state) : buildStreamReplyFromState({
       streamId: streamId || "unknown",
@@ -1127,12 +1182,9 @@ export async function handleWecomWebhookRequest(
       finished: true,
       content: "",
       images: [],
+      files: [],
       proactiveSent: false,
     });
-
-    // 调试：输出将要加密发送的 JSON 长度
-    const plainJson = JSON.stringify(reply);
-    console.log(`[wecom-debug] stream refresh response: plainJson length=${plainJson.length}, has msg_item=${!!reply.stream.msg_item}, msg_item_count=${reply.stream.msg_item?.length ?? 0}`);
 
     jsonOk(res, buildEncryptedJsonReply({
       account: target.account,
@@ -1203,6 +1255,7 @@ export async function handleWecomWebhookRequest(
     finished: false,
     content: "",
     images: [],
+    files: [],
     proactiveSent: false,
     target: chatId,
     isGroup: chatType === "group",
