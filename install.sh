@@ -267,6 +267,14 @@ try {
     if (config.plugins) {
         if (config.plugins.entries && config.plugins.entries.wecom) delete config.plugins.entries.wecom;
         if (config.plugins.installs && config.plugins.installs.wecom) delete config.plugins.installs.wecom;
+        // 清理 plugins.load.paths 中的旧路径
+        if (config.plugins.load && config.plugins.load.paths) {
+            config.plugins.load.paths = config.plugins.load.paths.filter(function(p) {
+                return p.indexOf('clawdbot-wechat') === -1;
+            });
+            if (config.plugins.load.paths.length === 0) delete config.plugins.load.paths;
+            if (config.plugins.load && Object.keys(config.plugins.load).length === 0) delete config.plugins.load;
+        }
     }
     fs.writeFileSync('$CONFIG_FILE', JSON.stringify(config, null, 2));
 } catch (e) {}
@@ -414,6 +422,22 @@ try {
         if (config.plugins.installs && config.plugins.installs.wecom) {
             delete config.plugins.installs.wecom;
             changed = true;
+        }
+        // 清理 plugins.load.paths 中的旧路径
+        if (config.plugins.load && config.plugins.load.paths) {
+            const oldLen = config.plugins.load.paths.length;
+            config.plugins.load.paths = config.plugins.load.paths.filter(function(p) {
+                return p.indexOf('clawdbot-wechat') === -1;
+            });
+            if (config.plugins.load.paths.length !== oldLen) {
+                changed = true;
+            }
+            if (config.plugins.load.paths.length === 0) {
+                delete config.plugins.load.paths;
+            }
+            if (config.plugins.load && Object.keys(config.plugins.load).length === 0) {
+                delete config.plugins.load;
+            }
         }
     }
     if (changed) {
