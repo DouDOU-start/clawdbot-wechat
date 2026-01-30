@@ -18,6 +18,7 @@ import type {
 import { decryptWecomEncrypted, encryptWecomPlaintext, verifyWecomSignature, computeWecomMsgSignature } from "./crypto.js";
 import { getWecomRuntime } from "./runtime.js";
 import { downloadImageFromUrl } from "./wecom-api.js";
+import { sendTextMessage, sendImageMessage, sendFileMessage, uploadMedia } from "./api.js";
 
 export type WecomRuntimeEnv = {
   log?: (message: string) => void;
@@ -43,11 +44,17 @@ type StreamState = {
   msgid?: string;
   createdAt: number;
   updatedAt: number;
+  lastRefreshAt: number; // 最后一次被企业微信刷新的时间
   started: boolean;
   finished: boolean;
   error?: string;
   content: string;
   images: StreamImage[]; // 图片列表，最多10张
+  // 主动消息补发相关
+  proactiveSent: boolean; // 是否已通过主动消息发送
+  target?: string; // 用户ID 或群聊ID
+  isGroup?: boolean; // 是否群聊
+  account?: ResolvedWecomAccount; // 用于主动发送的账号配置
 };
 
 const webhookTargets = new Map<string, WecomWebhookTarget[]>();
@@ -56,6 +63,8 @@ const msgidToStreamId = new Map<string, string>();
 
 const STREAM_TTL_MS = 10 * 60 * 1000;
 const STREAM_MAX_BYTES = 20_480;
+// 企业微信 stream 模式超时时间：如果 60 秒内没有刷新请求，认为已超时
+const STREAM_REFRESH_TIMEOUT_MS = 60 * 1000;
 
 function normalizeWebhookPath(raw: string): string {
   const trimmed = raw.trim();
@@ -65,7 +74,7 @@ function normalizeWebhookPath(raw: string): string {
   return withSlash;
 }
 
-function pruneStreams(): void {
+function pruneStreams(log?: (message: string) => void): void {
   const cutoff = Date.now() - STREAM_TTL_MS;
   for (const [id, state] of streams.entries()) {
     if (state.updatedAt < cutoff) {
@@ -77,6 +86,8 @@ function pruneStreams(): void {
       msgidToStreamId.delete(msgid);
     }
   }
+  // 检查超时补发
+  checkAndSendProactiveMessages(log).catch(() => {});
 }
 
 function truncateUtf8Bytes(text: string, maxBytes: number): string {
@@ -97,6 +108,11 @@ const IMAGE_URL_PATTERNS = [
 
 // 匹配 data URL 格式的图片
 const DATA_URL_PATTERN = /data:image\/(?:png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=]+)/gi;
+
+// 匹配文件 URL（非图片）
+const FILE_URL_PATTERNS = [
+  /(?<!\()(https?:\/\/[^\s<>"']+\.(?:pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|tar|gz|txt|csv|mp3|mp4|avi|mov|wmv)(?:\?[^\s<>"']*)?)(?!\))/gi,
+];
 
 /**
  * 从文本中提取图片 URL
@@ -231,6 +247,200 @@ async function processImagesInText(text: string): Promise<{ text: string; images
 
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * 从文本中提取文件 URL
+ */
+function extractFileUrls(text: string): string[] {
+  const urls = new Set<string>();
+  for (const pattern of FILE_URL_PATTERNS) {
+    pattern.lastIndex = 0;
+    const matches = text.matchAll(pattern);
+    for (const match of matches) {
+      const url = match[1] || match[0];
+      if (url) urls.add(url);
+    }
+  }
+  return Array.from(urls);
+}
+
+/**
+ * 下载文件并返回 Buffer
+ */
+async function downloadFile(url: string): Promise<{ buffer: Buffer; filename: string; contentType: string } | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60秒超时
+
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; ClawdbotWecom/1.0)",
+      },
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get("content-type") || "application/octet-stream";
+    const buffer = Buffer.from(await res.arrayBuffer());
+
+    // 从 URL 或 Content-Disposition 提取文件名
+    let filename = "file";
+    const disposition = res.headers.get("content-disposition");
+    if (disposition) {
+      const match = disposition.match(/filename[^;=\n]*=(['"]?)([^'"\n;]*)\1/i);
+      if (match?.[2]) filename = match[2];
+    } else {
+      const urlPath = new URL(url).pathname;
+      const lastSegment = urlPath.split("/").pop();
+      if (lastSegment && lastSegment.includes(".")) filename = lastSegment;
+    }
+
+    return { buffer, filename, contentType };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 通过主动消息 API 发送内容（超时补发）
+ */
+async function sendProactiveMessage(params: {
+  account: ResolvedWecomAccount;
+  target: string;
+  isGroup: boolean;
+  content: string;
+  images: StreamImage[];
+  log?: (message: string) => void;
+}): Promise<boolean> {
+  const { account, target, isGroup, content, images, log } = params;
+
+  if (!account.outboundConfigured) {
+    log?.(`[wecom] 未配置出站 API，无法发送主动消息`);
+    return false;
+  }
+
+  try {
+    // 1. 发送文本内容
+    if (content.trim()) {
+      const textResult = await sendTextMessage({
+        account,
+        target,
+        text: content,
+        isGroup,
+      });
+      if (textResult.errcode !== 0) {
+        log?.(`[wecom] 主动发送文本失败: ${textResult.errcode} ${textResult.errmsg}`);
+      } else {
+        log?.(`[wecom] 主动发送文本成功`);
+      }
+    }
+
+    // 2. 发送图片
+    for (const img of images) {
+      try {
+        const buffer = Buffer.from(img.base64, "base64");
+        const mediaId = await uploadMedia({
+          account,
+          type: "image",
+          buffer,
+          filename: `image_${img.md5.slice(0, 8)}.png`,
+        });
+        const imgResult = await sendImageMessage({
+          account,
+          target,
+          mediaId,
+          isGroup,
+        });
+        if (imgResult.errcode !== 0) {
+          log?.(`[wecom] 主动发送图片失败: ${imgResult.errcode} ${imgResult.errmsg}`);
+        } else {
+          log?.(`[wecom] 主动发送图片成功`);
+        }
+      } catch (err) {
+        log?.(`[wecom] 主动发送图片异常: ${String(err)}`);
+      }
+    }
+
+    // 3. 检测并发送文件 URL
+    const fileUrls = extractFileUrls(content);
+    for (const fileUrl of fileUrls) {
+      try {
+        log?.(`[wecom] 检测到文件 URL，尝试下载: ${fileUrl}`);
+        const fileData = await downloadFile(fileUrl);
+        if (fileData) {
+          const mediaId = await uploadMedia({
+            account,
+            type: "file",
+            buffer: fileData.buffer,
+            filename: fileData.filename,
+            contentType: fileData.contentType,
+          });
+          const fileResult = await sendFileMessage({
+            account,
+            target,
+            mediaId,
+            isGroup,
+          });
+          if (fileResult.errcode !== 0) {
+            log?.(`[wecom] 主动发送文件失败: ${fileResult.errcode} ${fileResult.errmsg}`);
+          } else {
+            log?.(`[wecom] 主动发送文件成功: ${fileData.filename}`);
+          }
+        } else {
+          log?.(`[wecom] 文件下载失败: ${fileUrl}`);
+        }
+      } catch (err) {
+        log?.(`[wecom] 主动发送文件异常: ${String(err)}`);
+      }
+    }
+
+    return true;
+  } catch (err) {
+    log?.(`[wecom] 主动发送消息异常: ${String(err)}`);
+    return false;
+  }
+}
+
+/**
+ * 检查超时的 stream 并使用主动消息补发
+ */
+async function checkAndSendProactiveMessages(log?: (message: string) => void): Promise<void> {
+  const now = Date.now();
+  for (const [streamId, state] of streams.entries()) {
+    // 跳过已完成、已发送主动消息、或没有配置出站 API 的
+    if (state.proactiveSent || !state.account?.outboundConfigured || !state.target) {
+      continue;
+    }
+
+    // 检查是否超时：已开始处理、未完成、且超过刷新超时时间
+    const timeSinceLastRefresh = now - state.lastRefreshAt;
+    if (state.started && !state.finished && timeSinceLastRefresh > STREAM_REFRESH_TIMEOUT_MS) {
+      log?.(`[wecom] stream ${streamId} 刷新超时 (${Math.round(timeSinceLastRefresh / 1000)}s)，等待完成后发送主动消息...`);
+      // 标记已发送，避免重复
+      state.proactiveSent = true;
+
+      // 等待处理完成（最多再等 5 分钟）
+      const waitStart = Date.now();
+      while (!state.finished && Date.now() - waitStart < 5 * 60 * 1000) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      if (state.content.trim() || state.images.length > 0) {
+        log?.(`[wecom] stream ${streamId} 开始主动消息补发`);
+        await sendProactiveMessage({
+          account: state.account,
+          target: state.target,
+          isGroup: state.isGroup ?? false,
+          content: state.content,
+          images: state.images,
+          log,
+        });
+      }
+    }
+  }
 }
 
 function jsonOk(res: ServerResponse, body: unknown): void {
@@ -674,18 +884,20 @@ export async function handleWecomWebhookRequest(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<boolean> {
-  pruneStreams();
-
   const path = resolvePath(req);
   const targets = webhookTargets.get(path);
   if (!targets || targets.length === 0) return false;
+
+  const firstTarget = targets[0]!;
+
+  // 清理过期 stream 并检查超时补发
+  pruneStreams(firstTarget.runtime.log);
 
   const query = resolveQueryParams(req);
   const timestamp = query.get("timestamp") ?? "";
   const nonce = query.get("nonce") ?? "";
   const signature = resolveSignatureParam(query);
 
-  const firstTarget = targets[0]!;
   logVerbose(firstTarget, `incoming ${req.method} request on ${path} (timestamp=${timestamp}, nonce=${nonce}, signature=${signature})`);
 
   if (req.method === "GET") {
@@ -821,15 +1033,21 @@ export async function handleWecomWebhookRequest(
   if (msgtype === "stream") {
     const streamId = String((msg as WecomInboundStreamRefresh).stream?.id ?? "").trim();
     const state = streamId ? streams.get(streamId) : undefined;
-    if (state) logVerbose(target, `stream refresh streamId=${streamId} started=${state.started} finished=${state.finished}`);
+    if (state) {
+      // 更新最后刷新时间
+      state.lastRefreshAt = Date.now();
+      logVerbose(target, `stream refresh streamId=${streamId} started=${state.started} finished=${state.finished}`);
+    }
     const reply = state ? buildStreamReplyFromState(state) : buildStreamReplyFromState({
       streamId: streamId || "unknown",
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      lastRefreshAt: Date.now(),
       started: true,
       finished: true,
       content: "",
       images: [],
+      proactiveSent: false,
     });
     jsonOk(res, buildEncryptedJsonReply({
       account: target.account,
@@ -883,15 +1101,27 @@ export async function handleWecomWebhookRequest(
   // Default: respond with a stream placeholder and compute the actual reply async.
   const streamId = createStreamId();
   if (msgid) msgidToStreamId.set(msgid, streamId);
+
+  // 确定发送目标（用于超时补发）
+  const userid = msg.from?.userid?.trim() || "";
+  const chatType = msg.chattype === "group" ? "group" : "direct";
+  const chatId = msg.chattype === "group" ? (msg.chatid?.trim() || "") : userid;
+
+  const now = Date.now();
   streams.set(streamId, {
     streamId,
     msgid,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
+    lastRefreshAt: now,
     started: false,
     finished: false,
     content: "",
     images: [],
+    proactiveSent: false,
+    target: chatId,
+    isGroup: chatType === "group",
+    account: target.account,
   });
 
   // Kick off agent processing in the background.
