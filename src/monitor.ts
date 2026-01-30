@@ -589,6 +589,11 @@ type StreamReply = {
 function buildStreamReplyFromState(state: StreamState): StreamReply {
   let content = truncateUtf8Bytes(state.content, STREAM_MAX_BYTES);
 
+  // 如果内容为空且未完成，显示占位符
+  if (!content.trim() && !state.finished) {
+    content = "请稍等...";
+  }
+
   // 如果已完成但内容为空，显示提示信息
   if (state.finished && !content.trim()) {
     if (state.images.length > 0) {
@@ -1213,11 +1218,9 @@ export async function handleWecomWebhookRequest(
     }
   }
 
-  // Try to include a first chunk in the initial response (matches WeCom demo behavior).
-  // If nothing is ready quickly, fall back to the placeholder "1".
-  await waitForStreamContent(streamId, 800);
+  // 首次直接返回，让企业微信通过刷新获取内容
   const state = streams.get(streamId);
-  const initialReply = state && (state.content.trim() || state.error)
+  const initialReply = state
     ? buildStreamReplyFromState(state)
     : buildStreamPlaceholderReply(streamId);
   jsonOk(res, buildEncryptedJsonReply({
