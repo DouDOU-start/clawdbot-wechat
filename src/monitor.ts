@@ -517,7 +517,7 @@ function buildStreamPlaceholderReply(streamId: string): { msgtype: "stream"; str
       id: streamId,
       finish: false,
       // Spec: "第一次回复内容为 1" works as a minimal placeholder.
-      content: "收到请稍后~",
+      content: "...",
     },
   };
 }
@@ -538,7 +538,19 @@ type StreamReply = {
 };
 
 function buildStreamReplyFromState(state: StreamState): StreamReply {
-  const content = truncateUtf8Bytes(state.content, STREAM_MAX_BYTES);
+  let content = truncateUtf8Bytes(state.content, STREAM_MAX_BYTES);
+
+  // 如果已完成但内容为空，显示提示信息
+  if (state.finished && !content.trim()) {
+    if (state.images.length > 0) {
+      content = "请查看图片";
+    } else if (state.files.length > 0) {
+      content = "请查看附件";
+    } else {
+      content = "(无内容)";
+    }
+  }
+
   const reply: StreamReply = {
     msgtype: "stream",
     stream: {
