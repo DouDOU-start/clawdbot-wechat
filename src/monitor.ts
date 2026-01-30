@@ -565,9 +565,8 @@ function buildStreamPlaceholderReply(streamId: string): { msgtype: "stream"; str
     stream: {
       id: streamId,
       finish: false,
-      // Spec: "第一次回复内容为 1" works as a minimal placeholder.
-      // 首次回复用短内容，后续刷新时 buildStreamReplyFromState 会返回完整提示
-      content: "1",
+      // 注意：企业微信客户端对 finish=false 的流式消息有显示长度限制
+      content: "请稍等..",
     },
   };
 }
@@ -589,11 +588,6 @@ type StreamReply = {
 
 function buildStreamReplyFromState(state: StreamState): StreamReply {
   let content = truncateUtf8Bytes(state.content, STREAM_MAX_BYTES);
-
-  // 如果内容为空，显示占位符（解决首次刷新时客户端显示宽度限制问题）
-  if (!content.trim() && !state.finished) {
-    content = "收到，请稍等...";
-  }
 
   // 如果已完成但内容为空，显示提示信息
   if (state.finished && !content.trim()) {
