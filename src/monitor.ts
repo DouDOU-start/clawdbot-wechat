@@ -610,8 +610,8 @@ function buildStreamReplyFromState(state: StreamState): StreamReply {
     stream: {
       id: state.streamId,
       finish: state.finished,
-      // 企业微信客户端对 finish=false 的消息会截掉最后一个字符，加一个空格补偿
-      content: state.finished ? content : content + " ",
+      // 企业微信客户端对 finish=false 的消息会截掉最后一个字符，加 "1" 占位补偿
+      content: state.finished ? content : content + "1",
     },
   };
 
