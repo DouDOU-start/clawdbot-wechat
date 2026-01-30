@@ -24,7 +24,7 @@ const meta = {
   selectionLabel: "WeCom (plugin)",
   docsPath: "/channels/wecom",
   docsLabel: "wecom",
-  blurb: "Enterprise WeCom intelligent bot (API mode) via encrypted webhooks + passive replies.",
+  blurb: "Enterprise WeCom intelligent bot (API mode) via encrypted webhooks + active/passive replies.",
   aliases: ["wechatwork", "wework", "qywx", "企微", "企业微信"],
   order: 85,
   quickstartAllowFrom: true,
