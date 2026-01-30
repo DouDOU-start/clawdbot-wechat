@@ -106,8 +106,8 @@ const IMAGE_URL_PATTERNS = [
   /(?<!\()(https?:\/\/[^\s<>"']+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s<>"']*)?)(?!\))/gi, // 纯 URL
 ];
 
-// 匹配 data URL 格式的图片
-const DATA_URL_PATTERN = /data:image\/(?:png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=]+)/gi;
+// 匹配 data URL 格式的图片（支持包含换行/空格的 base64）
+const DATA_URL_PATTERN = /data:image\/(?:png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=\s]+)/gi;
 
 // 匹配文件 URL（非图片）
 const FILE_URL_PATTERNS = [
@@ -183,7 +183,8 @@ function extractDataUrlImages(text: string): { dataUrls: string[]; base64List: S
   let match;
   while ((match = DATA_URL_PATTERN.exec(text)) !== null) {
     const fullMatch = match[0];
-    const base64Data = match[1];
+    // 移除 base64 中的空白字符
+    const base64Data = match[1]?.replace(/\s/g, "");
     if (base64Data && base64Data.length > 100) {
       // 确保有实际内容
       try {
