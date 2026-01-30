@@ -504,6 +504,8 @@ function buildEncryptedJsonReply(params: {
   timestamp: string;
 }): { encrypt: string; msgsignature: string; timestamp: string; nonce: string } {
   const plaintext = JSON.stringify(params.plaintextJson ?? {});
+  // 调试：输出发送的明文 JSON
+  console.log(`[wecom-debug] plaintext: ${plaintext.slice(0, 200)}${plaintext.length > 200 ? '...' : ''} (${plaintext.length} bytes)`);
   const encrypt = encryptWecomPlaintext({
     encodingAESKey: params.account.encodingAESKey ?? "",
     receiveId: params.account.receiveId ?? "",
