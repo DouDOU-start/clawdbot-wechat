@@ -565,8 +565,7 @@ function buildStreamPlaceholderReply(streamId: string): { msgtype: "stream"; str
     stream: {
       id: streamId,
       finish: false,
-      // 企业微信客户端对 finish=false 的消息会截掉最后一个字符，末尾加 "1" 占位补偿
-      content: "收到，请稍等...1",
+      content: "收到，请稍等...",
     },
   };
 }
@@ -605,8 +604,7 @@ function buildStreamReplyFromState(state: StreamState): StreamReply {
     stream: {
       id: state.streamId,
       finish: state.finished,
-      // 企业微信客户端对 finish=false 的消息会截掉最后一个字符，加 "1" 占位补偿
-      content: state.finished ? content : content + "1",
+      content,
     },
   };
 
