@@ -565,8 +565,8 @@ function buildStreamPlaceholderReply(streamId: string): { msgtype: "stream"; str
     stream: {
       id: streamId,
       finish: false,
-      // 企业微信客户端对 finish=false 的消息会截掉最后一个字符，末尾加空格补偿
-      content: "请稍等... ",
+      // 企业微信客户端对 finish=false 的消息会截掉最后一个字符，末尾加 "1" 占位补偿
+      content: "收到，请稍等...1",
     },
   };
 }
@@ -591,7 +591,7 @@ function buildStreamReplyFromState(state: StreamState): StreamReply {
 
   // 如果内容为空且未完成，显示占位符
   if (!content.trim() && !state.finished) {
-    content = "请稍等...";
+    content = "收到，请稍等...";
   }
 
   // 如果已完成但内容为空，显示提示信息
