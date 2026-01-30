@@ -511,6 +511,21 @@ function buildEncryptedJsonReply(params: {
     receiveId: params.account.receiveId ?? "",
     plaintext,
   });
+  // 调试：验证加密后能否正确解密
+  try {
+    const decrypted = decryptWecomEncrypted({
+      encodingAESKey: params.account.encodingAESKey ?? "",
+      receiveId: params.account.receiveId ?? "",
+      encrypt,
+    });
+    if (decrypted !== plaintext) {
+      console.log(`[wecom-debug] MISMATCH! decrypted: ${decrypted.slice(0, 200)}`);
+    } else {
+      console.log(`[wecom-debug] encrypt/decrypt OK`);
+    }
+  } catch (err) {
+    console.log(`[wecom-debug] decrypt error: ${err}`);
+  }
   const msgsignature = computeWecomMsgSignature({
     token: params.account.token ?? "",
     timestamp: params.timestamp,
