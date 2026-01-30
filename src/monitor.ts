@@ -64,8 +64,26 @@ const msgidToStreamId = new Map<string, string>();
 
 const STREAM_TTL_MS = 10 * 60 * 1000;
 const STREAM_MAX_BYTES = 20_480;
-// 企业微信 stream 模式超时时间：如果 60 秒内没有刷新请求，认为已超时
-const STREAM_REFRESH_TIMEOUT_MS = 60 * 1000;
+// 企业微信 stream 模式超时时间：如果 10 秒内没有刷新请求，认为已超时
+// 企业微信流式响应通常在 5 秒内超时，设置 10 秒留有余量
+const STREAM_REFRESH_TIMEOUT_MS = 10 * 1000;
+// 超时检查间隔：每 5 秒检查一次
+const STREAM_TIMEOUT_CHECK_INTERVAL_MS = 5 * 1000;
+
+// 启动定时器定期检查超时的 stream
+let timeoutCheckTimer: ReturnType<typeof setInterval> | null = null;
+
+function startTimeoutChecker(): void {
+  if (timeoutCheckTimer) return;
+  timeoutCheckTimer = setInterval(() => {
+    // 只在有活跃的 stream 时检查
+    if (streams.size > 0) {
+      checkAndSendProactiveMessages().catch(() => {});
+    }
+  }, STREAM_TIMEOUT_CHECK_INTERVAL_MS);
+  // 允许进程正常退出
+  timeoutCheckTimer.unref();
+}
 
 function normalizeWebhookPath(raw: string): string {
   const trimmed = raw.trim();
@@ -1125,6 +1143,9 @@ export async function handleWecomWebhookRequest(
     isGroup: chatType === "group",
     account: target.account,
   });
+
+  // 启动超时检查定时器
+  startTimeoutChecker();
 
   // Kick off agent processing in the background.
   let core: PluginRuntime | null = null;
