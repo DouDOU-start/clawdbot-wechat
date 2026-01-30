@@ -18,7 +18,7 @@ import type {
 import { decryptWecomEncrypted, encryptWecomPlaintext, verifyWecomSignature, computeWecomMsgSignature } from "./crypto.js";
 import { getWecomRuntime } from "./runtime.js";
 import { downloadImageFromUrl } from "./wecom-api.js";
-import { sendTextMessage, sendImageMessage, sendFileMessage, uploadMedia } from "./api.js";
+import { sendTextMessage, sendImageMessage, sendTextCardMessage, uploadMedia } from "./api.js";
 
 export type WecomRuntimeEnv = {
   log?: (message: string) => void;
@@ -128,9 +128,6 @@ const FILE_URL_PATTERNS = [
   /(?<!\()(https?:\/\/[^\s<>"']+\.(?:pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|tar|gz|txt|csv)(?:\?[^\s<>"']*)?)(?!\))/gi, // 纯 URL
 ];
 
-// 文件大小限制：20MB
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
-
 /**
  * 从文本中提取图片 URL
  */
@@ -220,172 +217,40 @@ async function downloadImageAsBase64(url: string): Promise<StreamImage | null> {
   }
 }
 
-/** 文件信息 */
+/** 文件链接信息（用于文本卡片发送） */
 interface StreamFile {
-  base64: string;
-  md5: string;
+  url: string;
   filename: string;
-  size: number;
 }
 
 /**
- * 下载文件并转换为 base64
+ * 从 URL 提取文件名
  */
-async function downloadFileAsBase64(url: string): Promise<StreamFile | null> {
+function extractFilenameFromUrl(url: string): string {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000); // 60秒超时
-
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; ClawdbotWecom/1.0)",
-      },
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      return null;
-    }
-
-    const buffer = Buffer.from(await res.arrayBuffer());
-
-    // 检查大小限制
-    if (buffer.length > MAX_FILE_SIZE) {
-      return null;
-    }
-
-    // 从 URL 或 Content-Disposition 中提取文件名
-    let filename = "";
-    const disposition = res.headers.get("content-disposition");
-    if (disposition) {
-      const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-      if (match) {
-        filename = match[1].replace(/['"]/g, "");
-      }
-    }
-    if (!filename) {
-      // 从 URL 提取文件名
-      try {
-        const urlPath = new URL(url).pathname;
-        filename = urlPath.split("/").pop() || "file";
-      } catch {
-        filename = "file";
-      }
-    }
-
-    const base64 = buffer.toString("base64");
-    const md5 = crypto.createHash("md5").update(buffer).digest("hex");
-
-    return { base64, md5, filename, size: buffer.length };
+    const urlPath = new URL(url).pathname;
+    const filename = urlPath.split("/").pop() || "file";
+    // 移除查询参数
+    return filename.split("?")[0];
   } catch {
-    return null;
+    return "file";
   }
 }
 
 /**
- * 从 data URL 提取 base64 图片
- * 使用更稳健的方式处理各种格式的 base64 数据
- */
-function extractDataUrlImages(text: string): { dataUrls: string[]; base64List: StreamImage[] } {
-  const dataUrls: string[] = [];
-  const base64List: StreamImage[] = [];
-
-  // 查找所有 data:image 的起始位置
-  const prefix = "data:image/";
-  let searchStart = 0;
-
-  while (true) {
-    const idx = text.indexOf(prefix, searchStart);
-    if (idx === -1) break;
-
-    // 找到 base64, 的位置
-    const base64Marker = ";base64,";
-    const markerIdx = text.indexOf(base64Marker, idx);
-    if (markerIdx === -1 || markerIdx > idx + 30) {
-      // 不是有效的 data URL 格式
-      searchStart = idx + 1;
-      continue;
-    }
-
-    const dataStart = markerIdx + base64Marker.length;
-
-    // 从 dataStart 开始，收集所有有效的 base64 字符
-    // 有效字符：A-Z, a-z, 0-9, +, /, =, 以及空白（换行、空格）
-    let dataEnd = dataStart;
-    while (dataEnd < text.length) {
-      const char = text[dataEnd];
-      if (/[A-Za-z0-9+/=\s]/.test(char)) {
-        dataEnd++;
-      } else {
-        break;
-      }
-    }
-
-    const fullMatch = text.slice(idx, dataEnd);
-    const base64WithSpaces = text.slice(dataStart, dataEnd);
-    const base64Data = base64WithSpaces.replace(/\s/g, "");
-
-    console.log(`[wecom-debug] found data URL at idx=${idx}, base64 raw length=${base64WithSpaces.length}, cleaned length=${base64Data.length}`);
-
-    if (base64Data && base64Data.length > 100) {
-      try {
-        const buffer = Buffer.from(base64Data, "base64");
-        // 检查是否是有效的图片数据（PNG/JPEG/GIF/WebP 魔数）
-        const isValidImage = buffer.length > 8 && (
-          // PNG: 89 50 4E 47
-          (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) ||
-          // JPEG: FF D8 FF
-          (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) ||
-          // GIF: 47 49 46 38
-          (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) ||
-          // WebP: 52 49 46 46 ... 57 45 42 50
-          (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46)
-        );
-
-        if (isValidImage && buffer.length <= MAX_IMAGE_SIZE) {
-          const md5 = crypto.createHash("md5").update(buffer).digest("hex");
-          dataUrls.push(fullMatch);
-          base64List.push({ base64: base64Data, md5 });
-          console.log(`[wecom-debug] valid image extracted, size=${buffer.length} bytes, md5=${md5.slice(0, 8)}`);
-        } else {
-          console.log(`[wecom-debug] invalid image data: isValidImage=${isValidImage}, size=${buffer.length}`);
-        }
-      } catch (err) {
-        console.log(`[wecom-debug] base64 decode error: ${String(err)}`);
-      }
-    }
-
-    searchStart = dataEnd;
-  }
-
-  return { dataUrls, base64List };
-}
-
-/**
- * 处理文本中的图片，下载并转换为 StreamImage
- * 支持 URL 和 data URL 两种格式
- * 返回处理后的文本（移除图片）和图片列表
+ * 处理文本中的图片 URL，下载并转换为 StreamImage
+ * 返回处理后的文本（移除图片 URL）和图片列表
  */
 async function processImagesInText(text: string): Promise<{ text: string; images: StreamImage[] }> {
   const images: StreamImage[] = [];
   let processedText = text;
 
-  // 1. 先处理 data URL 格式的图片（无需下载）
-  const { dataUrls, base64List } = extractDataUrlImages(text);
-  for (let i = 0; i < dataUrls.length && images.length < 10; i++) {
-    images.push(base64List[i]);
-    processedText = processedText.replace(dataUrls[i], "");
-  }
-
-  // 2. 再处理需要下载的 URL 图片
   const urls = extractImageUrls(processedText);
-  if (urls.length > 0 && images.length < 10) {
-    const remainingSlots = 10 - images.length;
-    const downloadPromises = urls.slice(0, remainingSlots).map((url) => downloadImageAsBase64(url));
+  if (urls.length > 0) {
+    const downloadPromises = urls.slice(0, 10).map((url) => downloadImageAsBase64(url));
     const results = await Promise.all(downloadPromises);
 
-    for (let i = 0; i < urls.length && i < remainingSlots; i++) {
+    for (let i = 0; i < urls.length && i < 10; i++) {
       const img = results[i];
       if (img) {
         images.push(img);
@@ -405,29 +270,21 @@ async function processImagesInText(text: string): Promise<{ text: string; images
 }
 
 /**
- * 处理文本中的文件，下载并转换为 StreamFile
+ * 处理文本中的文件链接，提取文件信息
  * 返回处理后的文本（移除文件链接）和文件列表
  */
-async function processFilesInText(text: string): Promise<{ text: string; files: StreamFile[] }> {
+function processFilesInText(text: string): { text: string; files: StreamFile[] } {
   const files: StreamFile[] = [];
   let processedText = text;
 
   const urls = extractFileUrls(processedText);
-  if (urls.length > 0) {
-    const downloadPromises = urls.slice(0, 10).map((url) => downloadFileAsBase64(url));
-    const results = await Promise.all(downloadPromises);
-
-    for (let i = 0; i < urls.length && i < 10; i++) {
-      const file = results[i];
-      if (file) {
-        files.push(file);
-        // 从文本中移除已处理的文件 URL（包括 markdown 格式）
-        const url = urls[i];
-        processedText = processedText
-          .replace(new RegExp(`!?\\[.*?\\]\\(${escapeRegExp(url)}\\)`, "g"), "")
-          .replace(new RegExp(escapeRegExp(url), "g"), "");
-      }
-    }
+  for (const url of urls.slice(0, 10)) {
+    const filename = extractFilenameFromUrl(url);
+    files.push({ url, filename });
+    // 从文本中移除文件 URL（包括 markdown 格式）
+    processedText = processedText
+      .replace(new RegExp(`!?\\[.*?\\]\\(${escapeRegExp(url)}\\)`, "g"), "")
+      .replace(new RegExp(escapeRegExp(url), "g"), "");
   }
 
   // 清理多余的空行
@@ -501,29 +358,25 @@ async function sendProactiveMessage(params: {
       }
     }
 
-    // 3. 发送已处理的文件
+    // 3. 发送文件链接卡片
     for (const file of files) {
       try {
-        const buffer = Buffer.from(file.base64, "base64");
-        const mediaId = await uploadMedia({
-          account,
-          type: "file",
-          buffer,
-          filename: file.filename,
-        });
-        const fileResult = await sendFileMessage({
+        const fileResult = await sendTextCardMessage({
           account,
           target,
-          mediaId,
+          title: `📎 ${file.filename}`,
+          description: "点击下载文件",
+          url: file.url,
+          btnText: "下载",
           isGroup,
         });
         if (fileResult.errcode !== 0) {
-          log?.(`[wecom] 主动发送文件失败: ${fileResult.errcode} ${fileResult.errmsg}`);
+          log?.(`[wecom] 主动发送文件卡片失败: ${fileResult.errcode} ${fileResult.errmsg}`);
         } else {
-          log?.(`[wecom] 主动发送文件成功: ${file.filename}`);
+          log?.(`[wecom] 主动发送文件卡片成功: ${file.filename}`);
         }
       } catch (err) {
-        log?.(`[wecom] 主动发送文件异常: ${String(err)}`);
+        log?.(`[wecom] 主动发送文件卡片异常: ${String(err)}`);
       }
     }
 
@@ -849,19 +702,18 @@ async function startAgentForStream(params: {
       if (images.length > 0) {
         current.content = textAfterImages;
         current.images = images;
-        target.runtime.log?.(`[wecom] processed ${images.length} images from response`);
       }
 
-      // 处理文件
-      const { text: textAfterFiles, files } = await processFilesInText(current.content);
+      // 处理文件链接
+      const { text: textAfterFiles, files } = processFilesInText(current.content);
       if (files.length > 0) {
         current.content = textAfterFiles;
         current.files = files;
-        target.runtime.log?.(`[wecom] processed ${files.length} files from response`);
       }
     } catch (err) {
       target.runtime.error?.(`[${account.accountId}] wecom media processing failed: ${String(err)}`);
     }
+
     current.finished = true;
     current.updatedAt = Date.now();
   }

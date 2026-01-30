@@ -277,6 +277,69 @@ export async function sendFileMessage(params: {
   }
 }
 
+/**
+ * Send text card message (for file download links)
+ */
+export async function sendTextCardMessage(params: {
+  account: ResolvedWecomAccount;
+  target: string;
+  title: string;
+  description: string;
+  url: string;
+  btnText?: string;
+  isGroup?: boolean;
+}): Promise<WecomSendResponse> {
+  const { account, target, title, description, url, btnText = "下载文件", isGroup } = params;
+  const token = await getAccessToken(account);
+
+  if (isGroup || target.startsWith("wr")) {
+    // Group chat
+    const apiUrl = `${WECOM_API_BASE}/appchat/send?access_token=${encodeURIComponent(token)}`;
+    const body = {
+      chatid: target,
+      msgtype: "textcard",
+      textcard: {
+        title,
+        description,
+        url,
+        btntxt: btnText,
+      },
+      safe: 0,
+    };
+
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    return (await res.json()) as WecomSendResponse;
+  } else {
+    // Direct message
+    const apiUrl = `${WECOM_API_BASE}/message/send?access_token=${encodeURIComponent(token)}`;
+    const body = {
+      touser: target,
+      msgtype: "textcard",
+      agentid: account.agentId,
+      textcard: {
+        title,
+        description,
+        url,
+        btntxt: btnText,
+      },
+      safe: 0,
+    };
+
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    return (await res.json()) as WecomSendResponse;
+  }
+}
+
 function getMimeType(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase();
   const mimeTypes: Record<string, string> = {
